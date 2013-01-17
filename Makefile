@@ -1,6 +1,8 @@
 all::
 
-obj-brother2 = brother2.o tcp.o
-TARGETS = brother2
+obj-libsane-bro2.so = brother2.o tcp.o
+libsane-bro2.so : LDFLAGS+= -shared
+libsane-bro2.so : CFLAGS+= -fpic
+TARGETS = libsane-bro2.so
 
 include base.mk
