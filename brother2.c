@@ -34,6 +34,24 @@ SANE_Status sane_open(SANE_String_Const name, SANE_Handle *h)
 void sane_close(SANE_Handle h)
 {}
 
+#define SANE_STR(thing)		\
+	.name = SANE_NAME_##thing,	\
+	.title = SANE_TITLE_##thing,	\
+	.desc = SANE_DESC_##thing
+
+static SANE_Option_Descriptor mfc7820n_opts [] = {
+	{
+		SANE_STR(SCAN_MODE),
+	}, {
+		SANE_STR(SCAN_X_RESOLUTION),
+	}, {
+		SANE_STR(SCAN_Y_RESOLUTION),
+	}, {
+		SANE_STR(BRIGHTNESS),
+	}, {
+		SANE_STR(CONTRAST),
+	}
+};
 
 static SANE_Option_Descriptor num_opts_opt = {
 	.name = "",
