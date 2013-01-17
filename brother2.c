@@ -2,6 +2,7 @@
 
 #include <stddef.h>
 #include <sane/sane.h>
+#include <sane/saneopts.h>
 
 static SANE_Auth_Callback auth;
 
@@ -33,20 +34,22 @@ SANE_Status sane_open(SANE_String_Const name, SANE_Handle *h)
 void sane_close(SANE_Handle h)
 {}
 
-static SANE_Option_Descriptor opts[] = {
-	{
-		.name = "count",
-		.title = "count",
-		.desc = "number of options",
-		.type = SANE_TYPE_INT,
-		.unit = SANE_UNIT_NONE,
-		.size = sizeof(SANE_Int),
-	}
+
+static SANE_Option_Descriptor num_opts_opt = {
+	.name = "",
+	.title = SANE_TITLE_NUM_OPTIONS,
+	.desc = SANE_DESC_NUM_OPTIONS,
+	.type = SANE_TYPE_INT,
+	.unit = SANE_UNIT_NONE,
+	.size = sizeof(SANE_Word),
+	.cap = SANE_CAP_SOFT_DETECT,
+	.constraint_type = SANE_CONSTRAINT_NONE,
+	.constraint = { .range = 0 },
 };
 const SANE_Option_Descriptor *sane_get_option_descriptor(SANE_Handle h, SANE_Int n)
 {
 	if (n == 0)
-		return &opts[0];
+		return &num_opts_opt;
 	return NULL;
 }
 
