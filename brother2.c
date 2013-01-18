@@ -4,6 +4,13 @@
 #include <sane/sane.h>
 #include <sane/saneopts.h>
 
+#ifndef NDEBUG
+#include <stdio.h>
+#define pr_debug(...) fprintf(stderr, __VA_ARGS__)
+#else
+#define pr_debug(...)
+#endif
+
 static SANE_Auth_Callback auth;
 
 SANE_Status sane_init(SANE_Int *ver, SANE_Auth_Callback authorize)
@@ -23,6 +30,7 @@ SANE_Status sane_get_devices(const SANE_Device ***dev_list,
 			     SANE_Bool local_only)
 {
 	*dev_list = (const SANE_Device **)device_list;
+	pr_debug("GET IT\n");
 	return SANE_STATUS_GOOD;
 }
 

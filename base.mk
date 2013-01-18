@@ -44,7 +44,7 @@ endif
 
 ifndef NO_LTO
 CFLAGS  ?= -flto
-LDFLAGS ?= $(ALL_CFLAGS) $(OPT) -fwhole-program
+LDFLAGS ?= $(ALL_CFLAGS) $(OPT) -fuse-linker-plugin
 else
 CFLAGS ?= $(OPT)
 endif
