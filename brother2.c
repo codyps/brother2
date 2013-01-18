@@ -59,7 +59,8 @@ static int bro2_connect(struct bro2_device *dev)
 	struct addrinfo *res;
 	int r = tcp_resolve_as_client(dev->addr, BRO2_PORT_STR, &res);
 
-	if (!r) {
+	pr_debug("resolve: %d\n", r);
+	if (r) {
 		fprintf(stderr, "failed to resolve %s: %s\n",
 				dev->addr, gai_strerror(r));
 		return -1;
