@@ -7,8 +7,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include "tcp.h"
-
-#define BRO2_PORT_STR "54921"
+#include "bro2.h"
 
 #define ARRAY_SZ(a) (sizeof(a) / sizeof(a[0]))
 
