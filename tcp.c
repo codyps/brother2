@@ -13,7 +13,7 @@ int tcp_resolve_listen(
 		char const *service,
 		struct addrinfo **res)
 {
-	if (!strcmp(node, "0.0.0.0")) {
+	if (node && !strcmp(node, "0.0.0.0")) {
 		node = NULL;
 	}
 
