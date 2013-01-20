@@ -8,6 +8,13 @@ __attribute__((unused))
 static const char *bro2_compression[] = {
 	"NONE",
 	"RLENGTH",
+	"JPEG"
+};
+
+/* Observed 'M' ("Mode") options */
+__attribute__((unused))
+static const char *bro2_modes[] = {
+	"CGRAY",
 };
 
 

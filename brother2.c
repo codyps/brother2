@@ -8,6 +8,7 @@
 #include <string.h>
 #include <unistd.h>
 #include <errno.h>
+#include <ctype.h>
 
 #include "tcp.h"
 #include "bro2.h"
@@ -31,7 +32,8 @@ struct bro2_device {
 	struct addrinfo *res;
 
 	/* settings */
-	int xres, yres;
+	int x_res, y_res;
+	int lt_x, lt_y, br_x, br_y;
 	const char *mode, *d, *compression;
 	int brightness, contrast;
 };
@@ -91,7 +93,7 @@ static void bro2_init(struct bro2_device *dev, const char *addr)
 	dev->addr = addr;
 
 	/* set some default values */
-	dev->xres = dev->yres = 300;
+	dev->x_res = dev->y_res = 300;
 	dev->mode = "CGREY";
 	dev->d = "SIN";
 	dev->compression = "NONE";
@@ -103,7 +105,7 @@ static void bro2_init(struct bro2_device *dev, const char *addr)
 static int bro2_read_status(struct bro2_device *dev)
 {
 	char buf[512];
-	ssize_t r = read(dev->fd, buf, sizeof(buf));
+	ssize_t r = read(dev->fd, buf, sizeof(buf) - 1);
 
 	if (r == 0) {
 		pr_debug("eof?\n");
@@ -113,8 +115,10 @@ static int bro2_read_status(struct bro2_device *dev)
 		return -1;
 	}
 
-	if (strncmp("+OK ", buf, 4)) {
-		DBG(1, "Not a status string : \"%.*s\"\n", (int)sizeof(buf), buf);
+	buf[r] = '\0';
+
+	if (r <= 4 || strncmp("+OK ", buf, 4)) {
+		DBG(1, "Not a status string : \"%.*s\"\n", (int)r, buf);
 		return -1;
 	}
 
@@ -137,6 +141,127 @@ static int bro2_read_status(struct bro2_device *dev)
 	}
 
 	return it;
+}
+
+static int bro2_send_I(struct bro2_device *dev)
+{
+	char buf[512];
+	int l = snprintf(buf, sizeof(buf),
+			"\x1bI\n"
+			"R=%u,%u\n"
+			"M=%s\n"
+			"\x80",
+			dev->x_res, dev->y_res, dev->mode);
+
+	if (l > sizeof(buf)) {
+		DBG(1, "too much for buffer.\n");
+		return -1;
+	}
+
+	ssize_t r = write(dev->fd, buf, l);
+	if (r != l) {
+		DBG(1, "write failed.\n");
+		return -1;
+	}
+
+	return 0;
+}
+
+/* Parses a comma seperated list of integers, which is terminated by
+ * a newline or the end of the buffer */
+static int parse_num_list(void const *v_buf, size_t buf_bytes, int *nums,
+		size_t num_ct, char **end)
+{
+	char const *buf = v_buf;
+	int n = 0, i = 0, p = 0;
+	while (p < buf_bytes && i < num_ct) {
+		int c = buf[p];
+		p++;
+
+		if (c == ',') {
+			nums[i] = n;
+			i ++;
+			n = 0;
+			continue;
+		}
+
+		if (c == '\n') {
+			break;
+		}
+
+		if (!isdigit(c)) {
+			DBG(1, "killed on a %x '%c' (%d %zu) \n", c, c, p, buf_bytes);
+			return -1;
+		}
+
+		n *= 10;
+		n += c - '0';
+	}
+
+	if (i < num_ct) {
+		nums[i] = n;
+		i++;
+	}
+
+	*end = (char *)buf + p;
+
+	return i;
+}
+
+static void hex_dump(char *buf, size_t buf_len) {
+	int i;
+	for (i = 0; i < buf_len; i++) {
+		if (!iscntrl(buf[i])) {
+			fprintf(stderr, " %c ", buf[i]);
+		} else {
+			fprintf(stderr, "%02X ", buf[i]);
+		}
+	}
+	putchar('\n');
+}
+
+static int bro2_recv_I_response(struct bro2_device *dev)
+{
+	char buf[512];
+	ssize_t l = read(dev->fd, buf, sizeof(buf) - 1);
+
+	if (l <= 0) {
+		DBG(1, "error in read\n");
+		return -1;
+	}
+
+	hex_dump(buf, l);
+
+#if 0
+	if (buf[l-1] != 0x80) {
+		DBG(1, "wrong terminator: %c %x\n", buf[l-1], buf[l-1]);
+		return -1;
+	}
+#endif
+	buf[l] = '\0';
+
+	if (buf[0] != 0x1b) {
+		DBG(1, "wrong start: %c %x\n", buf[0], buf[0]);
+		return -1;
+	}
+
+	if (buf[1] != 0x00) {
+		DBG(1, "wrong 2: %c %x\n", buf[1], buf[1]);
+		return -1;
+	}
+
+	int nums[7];
+	char *end;
+	int c = parse_num_list(buf + 2, l - 2, nums, 7, &end);
+	if (c != 7) {
+		DBG(1, "Did not get enough numbers: %d\n", c);
+		return -1;
+	}
+
+	DBG(1, "Nums: %d %d %d %d %d %d %d\n",
+			nums[0],nums[1],nums[2],nums[3],nums[4],nums[5],nums[6]);
+
+	return 0;
 }
 
 #define STR(x) STR_(x)
@@ -344,6 +469,22 @@ tend should reload the option descriptors, as if SANE INFO RELOAD OPTIONS had be
 returned from a call to sane control option(), since the device’s capabilities may
 have changed.
 #endif
+
+	struct bro2_device *dev = h;
+	/* negotiate parameters */
+	int r = bro2_send_I(dev);
+
+	if (r) {
+		DBG(1, "send I failed\n");
+		return SANE_STATUS_IO_ERROR;
+	}
+
+	r = bro2_recv_I_response(dev);
+	if (r) {
+		DBG(1, "handle I resp failed\n");
+		return SANE_STATUS_IO_ERROR;
+	}
+
 	return SANE_STATUS_IO_ERROR;
 }
 
