@@ -131,6 +131,11 @@ static int bro2_read_status(struct bro2_device *dev)
 		DBG(1, "negative status??\n");
 	}
 
+	if (strncmp("\r\n", end, 2)) {
+		DBG(1, "not terminated properly.\n");
+		return -1;
+	}
+
 	return it;
 }
 
