@@ -6,6 +6,9 @@
 
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
+#include <errno.h>
+
 #include "tcp.h"
 #include "bro2.h"
 
@@ -14,8 +17,10 @@
 #ifndef NDEBUG
 #include <stdio.h>
 #define pr_debug(...) fprintf(stderr, __VA_ARGS__)
+#define DBG(n, ...) fprintf(stderr, __VA_ARGS__)
 #else
 #define pr_debug(...)
+#define DBG(n, ...)
 #endif
 
 static SANE_Auth_Callback auth;
@@ -93,15 +98,69 @@ static void bro2_init(struct bro2_device *dev, const char *addr)
 	dev->brightness = dev->contrast = 50;
 }
 
+/* Must be called immediately after connecting, status is only sent at that
+ * time. */
+static int bro2_read_status(struct bro2_device *dev)
+{
+	char buf[512];
+	ssize_t r = read(dev->fd, buf, sizeof(buf));
+
+	if (r == 0) {
+		pr_debug("eof?\n");
+		return -1;
+	} else if (r == -1) {
+		pr_debug("error?\n");
+		return -1;
+	}
+
+	if (strncmp("+OK ", buf, 4)) {
+		DBG(1, "Not a status string : \"%.*s\"\n", (int)sizeof(buf), buf);
+		return -1;
+	}
+
+	char *end;
+	errno = 0;
+	long it = strtol(buf + 4, &end, 10);
+
+	if (errno) {
+		DBG(1, "Could not get number.\n");
+		return -2;
+	}
+
+	if (it < 0) {
+		DBG(1, "negative status??\n");
+	}
+
+	return it;
+}
+
+#define STR(x) STR_(x)
+#define STR_(x) #x
+#define NAME_PREFIX STR(BACKEND_NAME) ":"
+#define NAME_PREFIX_LEN (ARRAY_SZ(NAME_PREFIX) - 1)
+
 SANE_Status sane_open(SANE_String_Const name, SANE_Handle *h)
 {
+	if (strncmp(NAME_PREFIX, name, NAME_PREFIX_LEN)) {
+		return SANE_STATUS_INVAL;
+	}
+
+	const char *n = name + NAME_PREFIX_LEN;
+	/* welp, what type of device do we have here? */
+	/* FIXME: right now, IP address is assumed. */
+
 	struct bro2_device *dev = malloc(sizeof(*dev));
 	*h = dev;
 
-	bro2_init(dev, name);
+	bro2_init(dev, n);
 	int r = bro2_connect(dev);
 	if (r)
 		return SANE_STATUS_INVAL;
+
+	r = bro2_read_status(dev);
+	if (r != 200) {
+		pr_debug("Funky status code: %d\n", r);
+	}
 
 	return SANE_STATUS_GOOD;
 }
@@ -119,6 +178,26 @@ static SANE_Range range_percent = {
 	.max = 100,
 	.quant = 1
 };
+
+enum opts {
+	OPT_MODE,
+	OPT_X_RES,
+	OPT_Y_RES,
+	OPT_TL_X,
+	OPT_TL_Y,
+	OPT_BR_X,
+	OPT_BR_Y,
+	OPT_B,
+	OPT_C,
+	OPT_COMPRESS,
+	OPT_D
+};
+
+#define OPT_PX_CORD(it)				\
+	SANE_STR(SCAN_##it),			\
+	.type = SANE_TYPE_INT,			\
+	.unit = SANE_UNIT_PIXEL,		\
+	.constraint_type = SANE_CONSTRAINT_NONE
 
 static SANE_Option_Descriptor mfc7820n_opts [] = {
 	{
@@ -144,6 +223,14 @@ static SANE_Option_Descriptor mfc7820n_opts [] = {
 		.size = sizeof(SANE_Int),
 		.cap = 0,
 		.constraint_type = SANE_CONSTRAINT_NONE,
+	}, {
+		OPT_PX_CORD(TL_X),
+	}, {
+		OPT_PX_CORD(TL_Y),
+	}, {
+		OPT_PX_CORD(BR_X),
+	}, {
+		OPT_PX_CORD(BR_Y),
 	}, {
 		SANE_STR(BRIGHTNESS),
 		.type = SANE_TYPE_INT,
@@ -188,7 +275,7 @@ static SANE_Option_Descriptor num_opts_opt = {
 	.type = SANE_TYPE_INT,
 	.unit = SANE_UNIT_NONE,
 	.size = sizeof(SANE_Word),
-	//.cap = SANE_CAP_SOFT_DETECT,
+	.cap = SANE_CAP_SOFT_DETECT,
 	.constraint_type = SANE_CONSTRAINT_NONE,
 	.constraint = { .range = 0 },
 };
@@ -211,8 +298,12 @@ SANE_Status sane_control_option(SANE_Handle h, SANE_Int n, SANE_Action a, void *
 	/* XXX: TODO: */
 	switch (a) {
 	case SANE_ACTION_GET_VALUE:
-		if (!n)
-			return ARRAY_SZ(mfc7820n_opts);
+		if (!n) {
+			SANE_Int *r = v;
+			*r = ARRAY_SZ(mfc7820n_opts);
+			return SANE_STATUS_GOOD;
+		}
+
 		n--;
 		break;
 	case SANE_ACTION_SET_VALUE:
