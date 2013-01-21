@@ -261,6 +261,11 @@ static int bro2_recv_I_response(struct bro2_device *dev)
 	DBG(1, "Nums: %d %d %d %d %d %d %d\n",
 			nums[0],nums[1],nums[2],nums[3],nums[4],nums[5],nums[6]);
 
+	if (end != buf + l) {
+		DBG(1, "end doesn't match up.\n");
+		return -1;
+	}
+
 	return 0;
 }
 
