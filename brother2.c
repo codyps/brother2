@@ -9,6 +9,7 @@
 #include <unistd.h>
 #include <errno.h>
 #include <ctype.h>
+#include <stdbool.h>
 
 #include "tcp.h"
 #include "bro2.h"
@@ -26,16 +27,49 @@
 
 static SANE_Auth_Callback auth;
 
+#define SETTING_STR_LEN 8
+
+enum opts {
+	/* Integer options */
+	OPT_NUM,
+	OPT_X_RES,
+	OPT_Y_RES,
+	OPT_TL_X,
+	OPT_TL_Y,
+	OPT_BR_X,
+	OPT_BR_Y,
+	OPT_B,
+	OPT_C,
+	/* String options */
+	OPT_FIRST_STR,
+	OPT_MODE = OPT_FIRST_STR,
+	OPT_COMPRESS,
+	OPT_D
+};
+
 struct bro2_device {
 	int fd;
 	const char *addr;
 	struct addrinfo *res;
 
 	/* settings */
-	int x_res, y_res;
-	int tl_x, tl_y, br_x, br_y;
-	const char *mode, *d, *compress;
-	int brightness, contrast;
+	union {
+		struct {
+			int x_res, y_res;
+			int tl_x, tl_y, br_x, br_y;
+			int brightness, contrast;
+		};
+		int int_opts[6];
+	};
+
+	union {
+		struct {
+			char mode[SETTING_STR_LEN];
+			char compress[SETTING_STR_LEN];
+			char d[SETTING_STR_LEN];
+		};
+		char str_opts[3][SETTING_STR_LEN];
+	};
 };
 
 SANE_Status sane_init(SANE_Int *ver, SANE_Auth_Callback authorize)
@@ -92,14 +126,16 @@ static void bro2_init(struct bro2_device *dev, const char *addr)
 
 	/* set some default values */
 	dev->x_res = dev->y_res = 300;
-	dev->mode = "CGREY";
-	dev->d = "SIN";
-	dev->compress = "NONE";
+	strcpy(dev->mode, "CGREY");
+	strcpy(dev->d, "SIN");
+	strcpy(dev->compress, "NONE");
 	dev->brightness = dev->contrast = 50;
 }
 
 /* Must be called immediately after connecting, status is only sent at that
- * time. */
+ * time. 
+ * Returns a positive status, or a negative error code.
+ * */
 static int bro2_read_status(struct bro2_device *dev)
 {
 	char buf[512];
@@ -115,8 +151,16 @@ static int bro2_read_status(struct bro2_device *dev)
 
 	buf[r] = '\0';
 
-	if (r <= 4 || strncmp("+OK ", buf, 4)) {
-		DBG(1, "Not a status string : \"%.*s\"\n", (int)r, buf);
+	if (r <= 4) {
+		DBG(1, "String too short.\n");
+		return -1;
+	}
+
+	bool not_good = false;
+	if (!strncmp("-NG ", buf, 4)) {
+		not_good = true;
+	} else if (strncmp("+OK ", buf, 4)) {
+		DBG(1, "Status string not \"+OK\" => \"%.*s\"\n", (int)r, buf - 2);
 		return -1;
 	}
 
@@ -126,17 +170,20 @@ static int bro2_read_status(struct bro2_device *dev)
 
 	if (errno) {
 		DBG(1, "Could not get number.\n");
-		return -2;
+		return -1;
 	}
 
 	if (it < 0) {
-		DBG(1, "negative status??\n");
+		DBG(1, "negative status: %ld\n", it);
 	}
 
 	if (strncmp("\r\n", end, 2)) {
 		DBG(1, "not terminated properly.\n");
 		return -1;
 	}
+
+	if (not_good && it == 200)
+		return 9001;
 
 	return it;
 }
@@ -267,6 +314,23 @@ static int bro2_recv_I_response(struct bro2_device *dev)
 	return 0;
 }
 
+static int bro2_connect_and_get_status(struct bro2_device *dev)
+{
+	int r = bro2_connect(dev);
+	if (r)
+		return SANE_STATUS_IO_ERROR;
+
+	r = bro2_read_status(dev);
+	if (r == 401) {
+		/* should we retry? */
+		return SANE_STATUS_DEVICE_BUSY;
+	} else if (r != 200) {
+		return SANE_STATUS_IO_ERROR;
+	}
+
+	return 0;
+}
+
 #define STR(x) STR_(x)
 #define STR_(x) #x
 #define NAME_PREFIX STR(BACKEND_NAME) ":"
@@ -286,14 +350,9 @@ SANE_Status sane_open(SANE_String_Const name, SANE_Handle *h)
 	*h = dev;
 
 	bro2_init(dev, n);
-	int r = bro2_connect(dev);
+	int r = bro2_connect_and_get_status(dev);
 	if (r)
-		return SANE_STATUS_INVAL;
-
-	r = bro2_read_status(dev);
-	if (r != 200) {
-		pr_debug("Funky status code: %d\n", r);
-	}
+		return r;
 
 	return SANE_STATUS_GOOD;
 }
@@ -312,21 +371,6 @@ static SANE_Range range_percent = {
 	.quant = 1
 };
 
-enum opts {
-	OPT_NUM,
-	OPT_MODE,
-	OPT_X_RES,
-	OPT_Y_RES,
-	OPT_TL_X,
-	OPT_TL_Y,
-	OPT_BR_X,
-	OPT_BR_Y,
-	OPT_B,
-	OPT_C,
-	OPT_COMPRESS,
-	OPT_D
-};
-
 #define OPT_PX_CORD(it)				\
 	SANE_STR(SCAN_##it),			\
 	.type = SANE_TYPE_INT,			\
@@ -336,14 +380,6 @@ enum opts {
 
 static SANE_Option_Descriptor mfc7820n_opts [] = {
 	{
-		SANE_STR(SCAN_MODE),
-		/* ERRDIF or CGRAY or TEXT */
-		.type = SANE_TYPE_STRING,
-		.unit = SANE_UNIT_NONE,
-		.size = 8,
-		.cap = SANE_CAP_SOFT_SELECT,
-		.constraint_type = SANE_CONSTRAINT_NONE,
-	}, {
 		SANE_STR(SCAN_X_RESOLUTION),
 		/* 300, ??? */
 		.type = SANE_TYPE_INT,
@@ -383,12 +419,20 @@ static SANE_Option_Descriptor mfc7820n_opts [] = {
 		.constraint_type = SANE_CONSTRAINT_RANGE,
 		.constraint = { .range = &range_percent }
 	}, {
+		SANE_STR(SCAN_MODE),
+		/* ERRDIF or CGRAY or TEXT */
+		.type = SANE_TYPE_STRING,
+		.unit = SANE_UNIT_NONE,
+		.size = SETTING_STR_LEN,
+		.cap = SANE_CAP_SOFT_SELECT,
+		.constraint_type = SANE_CONSTRAINT_NONE,
+	}, {
 		.name = "compession",
 		.title = "Image Compression Type",
 		.desc = "Image Compression Type. NONE or RLENGTH or JPEG",
 		.type = SANE_TYPE_STRING,
 		.unit = SANE_UNIT_NONE,
-		.size = 8,
+		.size = SETTING_STR_LEN,
 		.cap = SANE_CAP_SOFT_SELECT,
 		.constraint_type = SANE_CONSTRAINT_NONE,
 	}, {
@@ -397,7 +441,7 @@ static SANE_Option_Descriptor mfc7820n_opts [] = {
 		.desc = "The D value. Only \"SIN\" has been observed.",
 		.type = SANE_TYPE_STRING,
 		.unit = SANE_UNIT_NONE,
-		.size = 8,
+		.size = SETTING_STR_LEN,
 		.cap = SANE_CAP_SOFT_SELECT,
 		.constraint_type = SANE_CONSTRAINT_NONE,
 	}
@@ -439,44 +483,45 @@ SANE_Status sane_control_option(SANE_Handle h, SANE_Int n, SANE_Action a, void *
 		case OPT_NUM:
 			*(SANE_Int *)v = ARRAY_SZ(mfc7820n_opts) + 1;
 			break;
-		case OPT_MODE:
-			strcpy(v, dev->mode);
-			break;
 		case OPT_X_RES:
-			*(SANE_Int *)v = dev->x_res;
-			break;
 		case OPT_Y_RES:
-			*(SANE_Int *)v = dev->y_res;
-			break;
 		case OPT_TL_X:
-			*(SANE_Int *)v = dev->tl_x;
-			break;
 		case OPT_TL_Y:
-			*(SANE_Int *)v = dev->tl_y;
-			break;
 		case OPT_BR_X:
-			*(SANE_Int *)v = dev->br_x;
-			break;
 		case OPT_BR_Y:
-			*(SANE_Int *)v = dev->br_y;
-			break;
 		case OPT_B:
-			*(SANE_Int *)v = dev->brightness;
-			break;
 		case OPT_C:
-			*(SANE_Int *)v = dev->contrast;
+			*(SANE_Int *)v = dev->int_opts[n-1];
 			break;
+		case OPT_MODE:
 		case OPT_COMPRESS:
-			strcpy(v, dev->compress);
-			break;
 		case OPT_D:
-			strcpy(v, dev->d);
+			strcpy(v, dev->str_opts[n-OPT_FIRST_STR]);
 			break;
 		default:
 			return SANE_STATUS_INVAL;
 		}
 		return SANE_STATUS_GOOD;
 	case SANE_ACTION_SET_VALUE:
+		switch (n) {
+		case OPT_X_RES:
+		case OPT_Y_RES:
+		case OPT_TL_X:
+		case OPT_TL_Y:
+		case OPT_BR_X:
+		case OPT_BR_Y:
+		case OPT_B:
+		case OPT_C:
+			dev->int_opts[n-1] = *(SANE_Int *)v;
+			break;
+		case OPT_MODE:
+		case OPT_COMPRESS:
+		case OPT_D:
+			strcpy(dev->str_opts[n-OPT_FIRST_STR], v);
+			break;
+		default:
+			return SANE_STATUS_INVAL;
+		}
 		break;
 	case SANE_ACTION_SET_AUTO:
 		break;
