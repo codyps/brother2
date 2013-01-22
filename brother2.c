@@ -510,7 +510,9 @@ or invalid authentication.
 }
 
 void sane_cancel(SANE_Handle h)
-{}
+{
+	/* TODO: close & reopen? */
+}
 
 SANE_Status sane_set_io_mode(SANE_Handle h, SANE_Bool m)
 {
@@ -527,7 +529,13 @@ SANE_Status sane_get_select_fd(SANE_Handle h, SANE_Int *fd)
 SANE STATUS INVAL: No image acquisition is pending.
 SANE STATUS UNSUPPORTED: The backend does not support this operation.
 #endif
-	return SANE_STATUS_UNSUPPORTED;
+	struct bro2_device *dev = h;
+	if (dev->fd == -1) {
+		return SANE_STATUS_INVAL;
+	}
+
+	*fd = dev->fd;
+	return SANE_STATUS_GOOD;
 }
 
 
