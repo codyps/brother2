@@ -6,15 +6,18 @@
 /* Observed 'C' ("compression") optins */
 __attribute__((unused))
 static const char *bro2_compression[] = {
-	"NONE",
+	"NONE",		/* noted in usb driver */
 	"RLENGTH",
-	"JPEG"
+	"JPEG"		/* noted in usb driver */
 };
 
 /* Observed 'M' ("Mode") options */
 __attribute__((unused))
 static const char *bro2_modes[] = {
 	"CGRAY",
+	"ERRDIF",
+	"C256",
+	"TEXT",		/* noted in usb driver */
 };
 
 

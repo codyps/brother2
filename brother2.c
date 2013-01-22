@@ -33,8 +33,8 @@ struct bro2_device {
 
 	/* settings */
 	int x_res, y_res;
-	int lt_x, lt_y, br_x, br_y;
-	const char *mode, *d, *compression;
+	int tl_x, tl_y, br_x, br_y;
+	const char *mode, *d, *compress;
 	int brightness, contrast;
 };
 
@@ -55,7 +55,6 @@ SANE_Status sane_get_devices(const SANE_Device ***dev_list,
 			     SANE_Bool local_only)
 {
 	*dev_list = (const SANE_Device **)device_list;
-	pr_debug("GET IT\n");
 	return SANE_STATUS_GOOD;
 }
 
@@ -65,7 +64,6 @@ static int bro2_connect(struct bro2_device *dev)
 	struct addrinfo *res;
 	int r = tcp_resolve_as_client(dev->addr, BRO2_PORT_STR, &res);
 
-	pr_debug("resolve: %d\n", r);
 	if (r) {
 		fprintf(stderr, "failed to resolve %s: %s\n",
 				dev->addr, gai_strerror(r));
@@ -96,7 +94,7 @@ static void bro2_init(struct bro2_device *dev, const char *addr)
 	dev->x_res = dev->y_res = 300;
 	dev->mode = "CGREY";
 	dev->d = "SIN";
-	dev->compression = "NONE";
+	dev->compress = "NONE";
 	dev->brightness = dev->contrast = 50;
 }
 
@@ -315,6 +313,7 @@ static SANE_Range range_percent = {
 };
 
 enum opts {
+	OPT_NUM,
 	OPT_MODE,
 	OPT_X_RES,
 	OPT_Y_RES,
@@ -332,7 +331,8 @@ enum opts {
 	SANE_STR(SCAN_##it),			\
 	.type = SANE_TYPE_INT,			\
 	.unit = SANE_UNIT_PIXEL,		\
-	.constraint_type = SANE_CONSTRAINT_NONE
+	.constraint_type = SANE_CONSTRAINT_NONE,\
+	.cap = SANE_CAP_SOFT_SELECT
 
 static SANE_Option_Descriptor mfc7820n_opts [] = {
 	{
@@ -340,8 +340,8 @@ static SANE_Option_Descriptor mfc7820n_opts [] = {
 		/* ERRDIF or CGRAY or TEXT */
 		.type = SANE_TYPE_STRING,
 		.unit = SANE_UNIT_NONE,
-		.size = 0,
-		.cap = 0,
+		.size = 8,
+		.cap = SANE_CAP_SOFT_SELECT,
 		.constraint_type = SANE_CONSTRAINT_NONE,
 	}, {
 		SANE_STR(SCAN_X_RESOLUTION),
@@ -349,14 +349,14 @@ static SANE_Option_Descriptor mfc7820n_opts [] = {
 		.type = SANE_TYPE_INT,
 		.unit = SANE_UNIT_DPI,
 		.size = sizeof(SANE_Int),
-		.cap = 0,
+		.cap = SANE_CAP_SOFT_SELECT,
 		.constraint_type = SANE_CONSTRAINT_NONE,
 	}, {
 		SANE_STR(SCAN_Y_RESOLUTION),
 		.type = SANE_TYPE_INT,
 		.unit = SANE_UNIT_DPI,
 		.size = sizeof(SANE_Int),
-		.cap = 0,
+		.cap = SANE_CAP_SOFT_SELECT,
 		.constraint_type = SANE_CONSTRAINT_NONE,
 	}, {
 		OPT_PX_CORD(TL_X),
@@ -371,7 +371,7 @@ static SANE_Option_Descriptor mfc7820n_opts [] = {
 		.type = SANE_TYPE_INT,
 		.unit = SANE_UNIT_NONE,
 		.size = sizeof(SANE_Int),
-		.cap = 0,
+		.cap = SANE_CAP_SOFT_SELECT,
 		.constraint_type = SANE_CONSTRAINT_RANGE,
 		.constraint = { .range = &range_percent }
 	}, {
@@ -379,26 +379,26 @@ static SANE_Option_Descriptor mfc7820n_opts [] = {
 		.type = SANE_TYPE_INT,
 		.unit = SANE_UNIT_NONE,
 		.size = sizeof(SANE_Int),
-		.cap = 0,
+		.cap = SANE_CAP_SOFT_SELECT,
 		.constraint_type = SANE_CONSTRAINT_RANGE,
 		.constraint = { .range = &range_percent }
 	}, {
 		.name = "compession",
 		.title = "Image Compression Type",
-		.desc = "Image Compression Type. NONE or RLENGTH.",
+		.desc = "Image Compression Type. NONE or RLENGTH or JPEG",
 		.type = SANE_TYPE_STRING,
 		.unit = SANE_UNIT_NONE,
-		.size = 0,
-		.cap = 0,
+		.size = 8,
+		.cap = SANE_CAP_SOFT_SELECT,
 		.constraint_type = SANE_CONSTRAINT_NONE,
 	}, {
-		.name = "D",
+		.name = "d",
 		.title = "D value",
 		.desc = "The D value. Only \"SIN\" has been observed.",
 		.type = SANE_TYPE_STRING,
 		.unit = SANE_UNIT_NONE,
-		.size = 0,
-		.cap = 0,
+		.size = 8,
+		.cap = SANE_CAP_SOFT_SELECT,
 		.constraint_type = SANE_CONSTRAINT_NONE,
 	}
 };
@@ -430,17 +430,52 @@ const SANE_Option_Descriptor *sane_get_option_descriptor(SANE_Handle h, SANE_Int
 
 SANE_Status sane_control_option(SANE_Handle h, SANE_Int n, SANE_Action a, void *v, SANE_Int *i)
 {
-	/* XXX: TODO: */
+	if (i) *i = 0;
+	struct bro2_device *dev = h;
+
 	switch (a) {
 	case SANE_ACTION_GET_VALUE:
-		if (!n) {
-			SANE_Int *r = v;
-			*r = ARRAY_SZ(mfc7820n_opts);
-			return SANE_STATUS_GOOD;
+		switch (n) {
+		case OPT_NUM:
+			*(SANE_Int *)v = ARRAY_SZ(mfc7820n_opts) + 1;
+			break;
+		case OPT_MODE:
+			strcpy(v, dev->mode);
+			break;
+		case OPT_X_RES:
+			*(SANE_Int *)v = dev->x_res;
+			break;
+		case OPT_Y_RES:
+			*(SANE_Int *)v = dev->y_res;
+			break;
+		case OPT_TL_X:
+			*(SANE_Int *)v = dev->tl_x;
+			break;
+		case OPT_TL_Y:
+			*(SANE_Int *)v = dev->tl_y;
+			break;
+		case OPT_BR_X:
+			*(SANE_Int *)v = dev->br_x;
+			break;
+		case OPT_BR_Y:
+			*(SANE_Int *)v = dev->br_y;
+			break;
+		case OPT_B:
+			*(SANE_Int *)v = dev->brightness;
+			break;
+		case OPT_C:
+			*(SANE_Int *)v = dev->contrast;
+			break;
+		case OPT_COMPRESS:
+			strcpy(v, dev->compress);
+			break;
+		case OPT_D:
+			strcpy(v, dev->d);
+			break;
+		default:
+			return SANE_STATUS_INVAL;
 		}
-
-		n--;
-		break;
+		return SANE_STATUS_GOOD;
 	case SANE_ACTION_SET_VALUE:
 		break;
 	case SANE_ACTION_SET_AUTO:
@@ -520,6 +555,10 @@ SANE_Status sane_set_io_mode(SANE_Handle h, SANE_Bool m)
 SANE STATUS INVAL: No image acquisition is pending.
 SANE STATUS UNSUPPORTED: The backend does not support the requested I/O mode.
 #endif
+	struct bro2_device *dev = h;
+	if (dev->fd == -1)
+		return SANE_STATUS_INVAL;
+
 	return SANE_STATUS_UNSUPPORTED;
 }
 
