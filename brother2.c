@@ -311,6 +311,9 @@ static int bro2_recv_I_response(struct bro2_device *dev)
 		return -1;
 	}
 
+	/* Do something with it? */
+
+
 	return 0;
 }
 
