@@ -223,7 +223,8 @@ static int bro2_send_X(struct bro2_device *dev)
 			"B=%u\n"
 			"N=%u\n"
 			"A=%u,%u,%u,%u"
-			"D=%s\n",
+			"D=%s\n"
+			"\x80",
 			dev->x_res, dev->y_res,
 			dev->mode,
 			dev->compress,
