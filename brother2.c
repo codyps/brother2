@@ -142,10 +142,10 @@ static int bro2_read_status(struct bro2_device *dev)
 	ssize_t r = read(dev->fd, buf, sizeof(buf) - 1);
 
 	if (r == 0) {
-		pr_debug("eof?\n");
+		DBG("eof?\n");
 		return -1;
 	} else if (r == -1) {
-		pr_debug("error?\n");
+		DBG("error?\n");
 		return -1;
 	}
 
@@ -206,6 +206,41 @@ static int bro2_send_I(struct bro2_device *dev)
 	ssize_t r = write(dev->fd, buf, l);
 	if (r != l) {
 		DBG(1, "write failed.\n");
+		return -1;
+	}
+
+	return 0;
+}
+
+static int bro2_send_X(struct bro2_device *dev)
+{
+	char buf[512];
+	int l = snprintf(buf, sizeof(buf),
+			"\x1bX\n"
+			"R=%u,%u\n"
+			"M=%s\n"
+			"C=%s\n"
+			"B=%u\n"
+			"N=%u\n"
+			"A=%u,%u,%u,%u"
+			"D=%s\n",
+			dev->x_res, dev->y_res,
+			dev->mode,
+			dev->compress,
+			dev->brightness,
+			dev->contrast,
+			dev->lt_x, dev->lt_y, dev->br_x, dev->br_y,
+			dev->d
+			);
+
+	if (l > sizeof(buf)) {
+		DBG(1, "too much for buffer.\n");
+		return -1;
+	}
+
+	ssize_t r = write(dev->fd, buf, l);
+	if (r != l) {
+		DBG(1, "write failed: %zd\n", s);
 		return -1;
 	}
 
@@ -525,9 +560,9 @@ SANE_Status sane_control_option(SANE_Handle h, SANE_Int n, SANE_Action a, void *
 		default:
 			return SANE_STATUS_INVAL;
 		}
-		break;
+		return SANE_STATUS_GOOD;
 	case SANE_ACTION_SET_AUTO:
-		break;
+		return SANE_STATUS_INVAL;
 	}
 
 	return SANE_STATUS_IO_ERROR;
