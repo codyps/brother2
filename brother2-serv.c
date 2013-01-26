@@ -59,6 +59,7 @@ static void peer_cb(EV_P_ ev_io *w, int revents)
 		return;
 	}
 
+	fprintf(stderr, "recved %zd bytes\n", r);
 	peer->pos += r;
 
 	peer_scan_buf_for_start_byte(peer);
@@ -91,8 +92,10 @@ static void accept_cb(EV_P_ ev_io *w, int revents)
 			accept_peer->addr_len = sizeof(accept_peer->addr);
 		}
 
+		fprintf(stderr, "BEFORE.");
 		int fd = accept(w->fd, (struct sockaddr *)&accept_peer->addr,
 				&accept_peer->addr_len);
+		fprintf(stderr, "AFTER.");
 		if (fd == -1) {
 			switch (errno) {
 			case EBADF:
@@ -174,13 +177,13 @@ int main(int argc, char **argv)
 		return 1;
 	}
 
-	int flags = fcntl(fd, F_GETFD, 0);
+	int flags = fcntl(fd, F_GETFL, 0);
 	if (flags == -1) {
 		fprintf(stderr, "could not get flags.\n");
 		return 1;
 	}
 
-	r = fcntl(fd, F_SETFD, flags | O_NONBLOCK);
+	r = fcntl(fd, F_SETFL, flags | O_NONBLOCK);
 	if (r == -1) {
 		fprintf(stderr, "could not set flags.\n");
 		return 1;
