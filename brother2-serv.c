@@ -46,8 +46,10 @@ static ssize_t peer_scan_buf_for_end_byte(struct peer *p)
 	return -1;
 }
 
+static int peer_ct;
 static void peer_cb(EV_P_ ev_io *w, int revents)
 {
+	fprintf(stderr, "Peer cb\n");
 	struct peer *peer= (struct peer *)w;
 	ssize_t r = read(w->fd, peer->buf + peer->pos, sizeof(peer->buf) - peer->pos);
 	if (r <= 0) {
@@ -70,6 +72,7 @@ static void peer_cb(EV_P_ ev_io *w, int revents)
 			/* not complete, check if we have more room */
 			if (sizeof(peer->buf) == peer->pos) {
 				fprintf(stderr, "ran out of buffer space.\n");
+				peer_ct --;
 				ev_io_stop(EV_A_ w);
 				close(w->fd);
 			}
@@ -77,7 +80,6 @@ static void peer_cb(EV_P_ ev_io *w, int revents)
 	}
 }
 
-static int peer_ct;
 
 static struct peer *accept_peer;
 static void accept_cb(EV_P_ ev_io *w, int revents)
@@ -105,15 +107,21 @@ static void accept_cb(EV_P_ ev_io *w, int revents)
 				/* DIE A HORRIBLE DEATH */
 				fprintf(stderr, "epic death: %s\n", strerror(errno));
 				ev_break(EV_A_ EVBREAK_ONE);
+				return;
 			case ECONNABORTED:
 			case EINTR:
 				continue;
 			case EAGAIN:
+				fprintf(stderr, "no more\n");
 				return;
 			}
 		}
 
+		fprintf(stderr, "accept.\n");
+
 		if (peer_ct == 0) {
+			fprintf(stderr, "OPTION 1\n");
+			peer_ct ++;
 			write(fd, "+OK 200\r\n", 9);
 			ev_io_init(&accept_peer->w, peer_cb, fd, EV_READ);
 			ev_io_start(EV_A_ &accept_peer->w);
@@ -160,6 +168,12 @@ int main(int argc, char **argv)
 
 	freeaddrinfo(res);
 
+	r = listen(fd, 128);
+	if (r == -1) {
+		fprintf(stderr, "could not listen.\n");
+		return 1;
+	}
+
 	int flags = fcntl(fd, F_GETFD, 0);
 	if (flags == -1) {
 		fprintf(stderr, "could not get flags.\n");
@@ -169,12 +183,6 @@ int main(int argc, char **argv)
 	r = fcntl(fd, F_SETFD, flags | O_NONBLOCK);
 	if (r == -1) {
 		fprintf(stderr, "could not set flags.\n");
-		return 1;
-	}
-
-	r = listen(fd, 128);
-	if (r == -1) {
-		fprintf(stderr, "could not listen.\n");
 		return 1;
 	}
 
