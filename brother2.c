@@ -110,8 +110,6 @@ static int bro2_connect(struct bro2_device *dev)
 	dev->res = res;
 
 	if (fd == -1) {
-		fprintf(stderr, "failed to connect to %s: %s\n",
-				dev->addr, strerror(r));
 		return -2;
 	}
 	return 0;
@@ -160,7 +158,7 @@ static int bro2_read_status(struct bro2_device *dev)
 	if (!strncmp("-NG ", buf, 4)) {
 		not_good = true;
 	} else if (strncmp("+OK ", buf, 4)) {
-		DBG(1, "Status string not \"+OK\" => \"%.*s\"\n", (int)r, buf - 2);
+		DBG(1, "Status string not \"+OK\" or \"+NG\" => \"%.*s\"\n", (int)r, buf - 2);
 		return -1;
 	}
 

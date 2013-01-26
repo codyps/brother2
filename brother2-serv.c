@@ -52,6 +52,11 @@ static void peer_cb(EV_P_ ev_io *w, int revents)
 	fprintf(stderr, "Peer cb\n");
 	struct peer *peer= (struct peer *)w;
 	ssize_t r = read(w->fd, peer->buf + peer->pos, sizeof(peer->buf) - peer->pos);
+	if (r == 0) {
+		fprintf(stderr, "peer disconnected.\n");
+		goto close_con;
+	}
+
 	if (r <= 0) {
 		fprintf(stderr, "probably a bug: %zd %s\n", r, strerror(errno));
 		ev_io_stop(EV_A_ w);
@@ -71,14 +76,19 @@ static void peer_cb(EV_P_ ev_io *w, int revents)
 			fprintf(stderr, "WOULD PARSE MESSAGE.\n");
 		} else {
 			/* not complete, check if we have more room */
+			fprintf(stderr, "Message not complete.\n");
 			if (sizeof(peer->buf) == peer->pos) {
 				fprintf(stderr, "ran out of buffer space.\n");
-				peer_ct --;
-				ev_io_stop(EV_A_ w);
-				close(w->fd);
+				goto close_con;
 			}
 		}
 	}
+	return;
+close_con:
+	peer_ct --;
+	ev_io_stop(EV_A_ w);
+	close(w->fd);
+	free(peer);
 }
 
 
@@ -92,10 +102,8 @@ static void accept_cb(EV_P_ ev_io *w, int revents)
 			accept_peer->addr_len = sizeof(accept_peer->addr);
 		}
 
-		fprintf(stderr, "BEFORE.");
 		int fd = accept(w->fd, (struct sockaddr *)&accept_peer->addr,
 				&accept_peer->addr_len);
-		fprintf(stderr, "AFTER.");
 		if (fd == -1) {
 			switch (errno) {
 			case EBADF:
@@ -108,22 +116,18 @@ static void accept_cb(EV_P_ ev_io *w, int revents)
 			case EPROTO:
 			default:
 				/* DIE A HORRIBLE DEATH */
-				fprintf(stderr, "epic death: %s\n", strerror(errno));
+				fprintf(stderr, "listener recieved error, exiting: %s\n", strerror(errno));
 				ev_break(EV_A_ EVBREAK_ONE);
 				return;
 			case ECONNABORTED:
 			case EINTR:
 				continue;
 			case EAGAIN:
-				fprintf(stderr, "no more\n");
 				return;
 			}
 		}
 
-		fprintf(stderr, "accept.\n");
-
 		if (peer_ct == 0) {
-			fprintf(stderr, "OPTION 1\n");
 			peer_ct ++;
 			write(fd, "+OK 200\r\n", 9);
 			ev_io_init(&accept_peer->w, peer_cb, fd, EV_READ);
