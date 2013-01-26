@@ -142,10 +142,10 @@ static int bro2_read_status(struct bro2_device *dev)
 	ssize_t r = read(dev->fd, buf, sizeof(buf) - 1);
 
 	if (r == 0) {
-		DBG("eof?\n");
+		DBG(1, "eof?\n");
 		return -1;
 	} else if (r == -1) {
-		DBG("error?\n");
+		DBG(1, "error?\n");
 		return -1;
 	}
 
@@ -230,7 +230,7 @@ static int bro2_send_X(struct bro2_device *dev)
 			dev->compress,
 			dev->brightness,
 			dev->contrast,
-			dev->lt_x, dev->lt_y, dev->br_x, dev->br_y,
+			dev->tl_x, dev->tl_y, dev->br_x, dev->br_y,
 			dev->d
 			);
 
@@ -241,7 +241,7 @@ static int bro2_send_X(struct bro2_device *dev)
 
 	ssize_t r = write(dev->fd, buf, l);
 	if (r != l) {
-		DBG(1, "write failed: %zd\n", s);
+		DBG(1, "write failed: %zd %s\n", r, strerror(errno));
 		return -1;
 	}
 

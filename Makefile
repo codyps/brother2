@@ -5,6 +5,7 @@ libsane-bro2.so : LDFLAGS+= -shared
 libsane-bro2.so : CFLAGS+= -fpic
 
 obj-bro2-serv = brother2-serv.o tcp.o
+bro2-serv : LDFLAGS+= -lev
 
 TARGETS = libsane-bro2.so bro2-serv
 

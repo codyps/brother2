@@ -1,6 +1,9 @@
 #ifndef BRO2_H_
 #define BRO2_H_
 
+#define BRO2_MSG_PREFIX 0x1b
+#define BRO2_MSG_SUFFIX 0x80
+
 #define BRO2_PORT_STR "54921"
 
 /* Observed 'C' ("compression") optins */
