@@ -1,9 +1,10 @@
 #include <stddef.h>
 #include <stdio.h>
 #include <string.h>
-#include <errno.h>
 #include <stdlib.h>
+#include <ctype.h>
 
+#include <errno.h>
 #include <unistd.h>
 #include <fcntl.h>
 
@@ -46,6 +47,48 @@ static ssize_t peer_scan_buf_for_end_byte(struct peer *p)
 	return -1;
 }
 
+static const char hex_lookup[] = "0123456789abcdef";
+static void print_hex_byte(uint8_t byte, FILE *f)
+{
+	putc(hex_lookup[byte >> 4], f);
+	putc(hex_lookup[byte & 0x0f], f);
+}
+
+static void print_bytes_as_cstring(void *data, size_t data_len, FILE *f)
+{
+	putc('"', f);
+	char *p = data;
+	size_t i;
+	for (i = 0; i < data_len; i++) {
+		char c = p[i];
+		if (iscntrl(c) || !isprint(c)) {
+			switch (c) {
+			case '\n':
+				putc('\\', f);
+				putc('n', f);
+				break;
+			case '\r':
+				putc('\\', f);
+				putc('r', f);
+				break;
+			default:
+				putc('\\', f);
+				putc('x', f);
+				print_hex_byte(c, f);
+			}
+		} else  {
+			switch (c) {
+			case '"':
+			case '\\':
+				putc('\\', f);
+			default:
+			}
+			putc(c, f);
+		}
+	}
+	putc('"', f);
+}
+
 static int peer_ct;
 static void peer_cb(EV_P_ ev_io *w, int revents)
 {
@@ -55,17 +98,17 @@ static void peer_cb(EV_P_ ev_io *w, int revents)
 	if (r == 0) {
 		fprintf(stderr, "peer disconnected.\n");
 		goto close_con;
-	}
-
-	if (r <= 0) {
+	} else if (r < 0) {
 		fprintf(stderr, "probably a bug: %zd %s\n", r, strerror(errno));
-		ev_io_stop(EV_A_ w);
-		close(w->fd);
-		return;
+		goto close_con;
 	}
 
-	fprintf(stderr, "recved %zd bytes\n", r);
+	fprintf(stderr, "recved %zd bytes: ", r);
+	print_bytes_as_cstring(peer->buf + peer->pos, r, stderr);
 	peer->pos += r;
+	fprintf(stderr, "\npeer buffer is: ");
+	print_bytes_as_cstring(peer->buf, peer->pos, stderr);
+	putc('\n', stderr);
 
 	peer_scan_buf_for_start_byte(peer);
 
@@ -191,6 +234,12 @@ int main(int argc, char **argv)
 	if (r == -1) {
 		fprintf(stderr, "could not set flags.\n");
 		return 1;
+	}
+
+	flags = 1;
+	r = setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &flags, sizeof(flags));
+	if (r == -1) {
+		fprintf(stderr, "could not set sockopt.\n");
 	}
 
 	ev_io accept_listener;
