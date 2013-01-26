@@ -82,8 +82,8 @@ static void print_bytes_as_cstring(void *data, size_t data_len, FILE *f)
 			case '\\':
 				putc('\\', f);
 			default:
+				putc(c, f);
 			}
-			putc(c, f);
 		}
 	}
 	putc('"', f);
