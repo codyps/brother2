@@ -302,6 +302,7 @@ static void hex_dump(char *buf, size_t buf_len) {
 static int bro2_recv_I_response(struct bro2_device *dev)
 {
 	char buf[512];
+	/* FIXME: timeout at some point. */
 	ssize_t l = read(dev->fd, buf, sizeof(buf) - 1);
 
 	if (l <= 0) {
@@ -345,9 +346,7 @@ static int bro2_recv_I_response(struct bro2_device *dev)
 		return -1;
 	}
 
-	/* Do something with it? */
-
-
+	/* TODO: Do something with it */
 	return 0;
 }
 
