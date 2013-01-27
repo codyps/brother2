@@ -17,7 +17,7 @@ struct peer {
 	ev_io w;
 	struct sockaddr_storage addr;
 	socklen_t addr_len;
-	char buf[128];
+	uint8_t buf[128];
 	size_t pos;
 };
 
@@ -92,21 +92,21 @@ static void print_bytes_as_cstring(void *data, size_t data_len, FILE *f)
 static int peer_ct;
 static void peer_cb(EV_P_ ev_io *w, int revents)
 {
-	fprintf(stderr, "Peer cb\n");
+	fprintf(stderr, "PEER EVENT\n");
 	struct peer *peer= (struct peer *)w;
 	ssize_t r = read(w->fd, peer->buf + peer->pos, sizeof(peer->buf) - peer->pos);
 	if (r == 0) {
-		fprintf(stderr, "peer disconnected.\n");
+		fprintf(stderr, "\tdisconnected.\n");
 		goto close_con;
 	} else if (r < 0) {
-		fprintf(stderr, "probably a bug: %zd %s\n", r, strerror(errno));
+		fprintf(stderr, "\tunknown error in read: %zd %s\n", r, strerror(errno));
 		goto close_con;
 	}
 
-	fprintf(stderr, "recved %zd bytes: ", r);
+	fprintf(stderr, "\treceived %zd bytes: ", r);
 	print_bytes_as_cstring(peer->buf + peer->pos, r, stderr);
 	peer->pos += r;
-	fprintf(stderr, "\npeer buffer is: ");
+	fprintf(stderr, "\n\tpeer buffer is: ");
 	print_bytes_as_cstring(peer->buf, peer->pos, stderr);
 	putc('\n', stderr);
 
@@ -116,12 +116,12 @@ static void peer_cb(EV_P_ ev_io *w, int revents)
 		ssize_t p = peer_scan_buf_for_end_byte(peer);
 		if (p > 0) {
 			/* we have a complete message */
-			fprintf(stderr, "WOULD PARSE MESSAGE.\n");
+			fprintf(stderr, "\tWOULD PARSE MESSAGE.\n");
 		} else {
 			/* not complete, check if we have more room */
-			fprintf(stderr, "Message not complete.\n");
+			fprintf(stderr, "\tMessage not complete.\n");
 			if (sizeof(peer->buf) == peer->pos) {
-				fprintf(stderr, "ran out of buffer space.\n");
+				fprintf(stderr, "\tran out of buffer space.\n");
 				goto close_con;
 			}
 		}
