@@ -42,7 +42,7 @@
 
 #include <stdio.h>
 
-#include "../include/sane/sane.h"
+#include <sane/sane.h>
 
 #ifndef SANE_I18N
 #define SANE_I18N(text)   text
