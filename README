@@ -1,0 +1,39 @@
+brother2
+========
+
+This driver was initially designed based on network dumps from wireshark of the
+windows driver comunicating with a MFC-7820N multifunction printer/scanner/fax.
+
+Because Brother has a single driver ("brscan2", in the case of the MFC-7820N)
+for a number of devices, I expect that other devices which use the same Brother
+Proprietary driver ("brscan2") may work with this driver.
+
+For a listing of models, see the [Scanner driver download] link below.
+
+Building
+--------
+Use `make`.
+
+Project contains two (2) components:
+
+  libsane-bro2.so ::  a sane scanner driver.
+
+  bro2-serv :: a server which pretends to be a mfc-7820n. Requires libev.
+
+
+Testing
+-------
+
+    ./bro2-serv
+
+    LD_LIBRARY_PATH=. scanadf -d bro2:127.0.0.1
+
+Or, more idealy, use a real scanner instead of the fake one.
+
+Links
+-----
+
+Brother's proprietary driver page: http://welcome.solutions.brother.com/bsc/public_s/id/linux/en/index.html
+
+Scanner driver download: http://welcome.solutions.brother.com/bsc/public_s/id/linux/en/download_scn.html
+
