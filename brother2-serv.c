@@ -10,7 +10,8 @@
 
 #include <ev.h>
 
-#include "tcp.h"
+#include "penny/tcp.h"
+#include "penny/fd.h"
 #include "bro2.h"
 
 #define peer_err(peer, fmt, ...) fprintf(stderr, fmt ##, __VA_ARGS__)
@@ -57,7 +58,7 @@ static void print_hex_byte(uint8_t byte, FILE *f)
 }
 
 /* initially set pos to the start of the packet. */
-static char *tokenize_packet(char **pos)
+static uint8_t *tokenize_packet(uint8_t **pos)
 {
 	uint8_t *p = (uint8_t *)*pos, *n = p;
 	for (;;) {
@@ -80,10 +81,10 @@ static int peer_ct;
 
 static int peer_parse_msg(struct peer *peer)
 {
-	char *data = peer->buf + 1;
-	char *pkt_type = tokenize_packet(&data);
-	char *elem;
-	if (strlen(pkt_type) != 1) {
+	uint8_t *data = peer->buf + 1;
+	uint8_t *pkt_type = tokenize_packet(&data);
+	uint8_t *elem;
+	if (strlen((char *)pkt_type) != 1) {
 		fprintf(stderr, "\tpacket type is not len 1: \"%s\"", pkt_type);
 		return -1;
 	}
@@ -281,18 +282,11 @@ int main(int argc, char **argv)
 		return 1;
 	}
 
-	int flags = fcntl(fd, F_GETFL, 0);
-	if (flags == -1) {
-		fprintf(stderr, "could not get flags.\n");
+	r = fd_set_nonblock(fd);
+	if (r < 0) {
+		fprintf(stderr, "could not set socket non-blocking.\n");
 		return 1;
 	}
-
-	r = fcntl(fd, F_SETFL, flags | O_NONBLOCK);
-	if (r == -1) {
-		fprintf(stderr, "could not set flags.\n");
-		return 1;
-	}
-
 
 	ev_io accept_listener;
 	ev_io_init(&accept_listener, accept_cb, fd, EV_READ);

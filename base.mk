@@ -27,7 +27,9 @@
 # - flag tracking per target.'.obj.o.cmd'
 # - flag tracking that easily allows adding extra variables.
 # - profile guided optimization support.
+# - output directory support ("make O=blah")
 # - build with different flags placed into different output directories.
+# - library building (shared & static)
 
 .PHONY: all
 all:: $(TARGETS)
@@ -51,7 +53,7 @@ endif
 
 CFLAGS += -ggdb3
 
-ALL_CFLAGS += -std=gnu99 -Wall -Wundef -Wendif-labels -Wshadow -Wpointer-arith -Wbad-function-cast -Wcast-align -Wwrite-strings -Wstrict-prototypes -Wmissing-prototypes -Wnested-externs -Winline -Wdisabled-optimization -fstrict-aliasing -Wno-parentheses
+ALL_CFLAGS += -std=gnu99 -Wall -Wundef -Wendif-labels -Wshadow -Wpointer-arith -Wbad-function-cast -Wcast-align -Wwrite-strings -Wstrict-prototypes -Wmissing-prototypes -Wnested-externs -fstrict-aliasing -Wno-parentheses
 ALL_CFLAGS  += -pipe $(CFLAGS)
 ALL_LDFLAGS += $(LDFLAGS)
 
@@ -64,6 +66,8 @@ endif
 
 .SECONDARY:
 .PHONY: FORCE
+
+obj-to-dep = $(foreach obj,$(1),$(dir $(obj))/.$(notdir $(obj)))
 
 ### Detect prefix changes
 ## Use "#')" to hack around vim highlighting.
@@ -85,7 +89,7 @@ TRACK_LDFLAGS = $(LD):$(subst ','\'',$(ALL_LDFLAGS)) #')
 
 #.%.o.d %.o: %.c .TRACK-CFLAGS
 %.o: %.c .TRACK-CFLAGS
-	$(QUIET_CC)$(CC) -MMD -MF .$@.d -c -o $@ $< $(ALL_CFLAGS)
+	$(QUIET_CC)$(CC) -MMD -MF "$(call obj-to-dep,$@)" -c -o "$@" "$<" $(ALL_CFLAGS)
 
 .SECONDEXPANSION:
 $(TARGETS) : .TRACK-LDFLAGS $$(obj-$$@)
@@ -104,9 +108,10 @@ endif
 TRASH = .TRACK-CFLAGS .TRACK-LDFLAGS
 .PHONY: clean %.clean
 %.clean :
-	$(RM) $(obj-$*) $* $(TRASH) $(patsubst %.o,.%.o.d,$(obj-$*))
+	$(RM) $(obj-$*) $* $(TRASH) $(call obj-to-dep,$(obj-$*))
 
 clean:	$(foreach target,$(TARGETS),$(target).clean)
 
-deps = $(patsubst %.o,.%.o.d,$(foreach target,$(TARGETS),$(obj-$(target))))
+ALL_OBJ = $(foreach target,$(TARGETS),$(obj-$(target)))
+deps = $(call obj-to-dep,$(ALL_OBJ))
 -include $(deps)

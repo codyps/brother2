@@ -1,9 +1,12 @@
 #ifndef BRO2_H_
 #define BRO2_H_
 
-/* be careful comparing these to (signed) chars, sign extention will occur. */
+/* be careful comparing these to (potentially signed) chars, sign extention will occur. */
 #define BRO2_MSG_PREFIX 0x1bu
 #define BRO2_MSG_SUFFIX 0x80u
+
+#define BRO2_MSG_C_PREFIX '\x1b'
+#define BRO2_MSG_C_SUFFIX '\x80'
 
 #define BRO2_PORT_STR "54921"
 

@@ -11,7 +11,7 @@
 #include <ctype.h>
 #include <stdbool.h>
 
-#include "tcp.h"
+#include "penny/tcp.h"
 #include "bro2.h"
 
 #define ARRAY_SZ(a) (sizeof(a) / sizeof(a[0]))
