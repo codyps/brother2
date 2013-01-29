@@ -456,7 +456,6 @@ static SANE_Option_Descriptor mfc7820n_opts [] = {
 		.constraint = { .range = &range_percent }
 	}, {
 		SANE_STR(SCAN_MODE),
-		/* ERRDIF or CGRAY or TEXT */
 		.type = SANE_TYPE_STRING,
 		.unit = SANE_UNIT_NONE,
 		.size = SETTING_STR_LEN,
@@ -628,6 +627,8 @@ or invalid authentication.
 void sane_cancel(SANE_Handle h)
 {
 	/* TODO: close & reopen? */
+	struct bro2_device *dev = h;
+	close(dev->fd);
 }
 
 SANE_Status sane_set_io_mode(SANE_Handle h, SANE_Bool m)

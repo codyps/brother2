@@ -13,6 +13,8 @@
 #include "tcp.h"
 #include "bro2.h"
 
+#define peer_err(peer, fmt, ...) fprintf(stderr, fmt ##, __VA_ARGS__)
+
 struct peer {
 	ev_io w;
 	struct sockaddr_storage addr;
@@ -54,6 +56,47 @@ static void print_hex_byte(uint8_t byte, FILE *f)
 	putc(hex_lookup[byte & 0x0f], f);
 }
 
+/* initially set pos to the start of the packet. */
+static char *tokenize_packet(char **pos)
+{
+	uint8_t *p = (uint8_t *)*pos, *n = p;
+	for (;;) {
+		if (*p == BRO2_MSG_SUFFIX) {
+			*pos = p;
+			return NULL;
+		}
+
+		p++;
+
+		if (*p == '\n') {
+			*p = '\0';
+			*pos = p + 1;
+			return n;
+		}
+	}
+}
+
+static int peer_ct;
+
+static int peer_parse_msg(struct peer *peer)
+{
+	char *data = peer->buf + 1;
+	char *pkt_type = tokenize_packet(&data);
+	char *elem;
+	if (strlen(pkt_type) != 1) {
+		fprintf(stderr, "\tpacket type is not len 1: \"%s\"", pkt_type);
+		return -1;
+	}
+
+	fprintf(stderr, "\tpacket type = %c\n", *pkt_type);
+
+	while ((elem = tokenize_packet(&data))) {
+		fprintf(stderr, "\t\telem = %s\n", elem);
+	}
+
+	return 0;
+}
+
 static void print_bytes_as_cstring(void *data, size_t data_len, FILE *f)
 {
 	putc('"', f);
@@ -63,6 +106,10 @@ static void print_bytes_as_cstring(void *data, size_t data_len, FILE *f)
 		char c = p[i];
 		if (iscntrl(c) || !isprint(c)) {
 			switch (c) {
+			case '\0':
+				putc('\\', f);
+				putc('0', f);
+				break;
 			case '\n':
 				putc('\\', f);
 				putc('n', f);
@@ -89,7 +136,6 @@ static void print_bytes_as_cstring(void *data, size_t data_len, FILE *f)
 	putc('"', f);
 }
 
-static int peer_ct;
 static void peer_cb(EV_P_ ev_io *w, int revents)
 {
 	fprintf(stderr, "PEER EVENT\n");
@@ -103,20 +149,31 @@ static void peer_cb(EV_P_ ev_io *w, int revents)
 		goto close_con;
 	}
 
-	fprintf(stderr, "\treceived %zd bytes: ", r);
+	fprintf(stderr,   "\treceived      : ");
 	print_bytes_as_cstring(peer->buf + peer->pos, r, stderr);
 	peer->pos += r;
 	fprintf(stderr, "\n\tpeer buffer is: ");
 	print_bytes_as_cstring(peer->buf, peer->pos, stderr);
 	putc('\n', stderr);
 
+repeat_msg:
 	peer_scan_buf_for_start_byte(peer);
-
-	if (peer->buf[0] == BRO2_MSG_PREFIX) {
+	if (peer->pos && peer->buf[0] == BRO2_MSG_PREFIX) {
 		ssize_t p = peer_scan_buf_for_end_byte(peer);
 		if (p > 0) {
 			/* we have a complete message */
-			fprintf(stderr, "\tWOULD PARSE MESSAGE.\n");
+			r = peer_parse_msg(peer);
+			if (r < 0)
+				goto close_con;
+			else {
+				memmove(peer->buf, peer->buf + p + 1, peer->pos - p - 1);
+				peer->pos -= p + 1;
+				fprintf(stderr, "\tpeer buffer is: ");
+				print_bytes_as_cstring(peer->buf, peer->pos, stderr);
+				putc('\n', stderr);
+				goto repeat_msg;
+			}
+
 		} else {
 			/* not complete, check if we have more room */
 			fprintf(stderr, "\tMessage not complete.\n");
@@ -236,11 +293,6 @@ int main(int argc, char **argv)
 		return 1;
 	}
 
-	flags = 1;
-	r = setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &flags, sizeof(flags));
-	if (r == -1) {
-		fprintf(stderr, "could not set sockopt.\n");
-	}
 
 	ev_io accept_listener;
 	ev_io_init(&accept_listener, accept_cb, fd, EV_READ);

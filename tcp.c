@@ -60,6 +60,9 @@ int tcp_bind(struct addrinfo const *ai)
 		if (sfd == -1)
 			continue;
 
+		int flags = 1;
+		setsockopt(sfd, SOL_SOCKET, SO_REUSEADDR, &flags, sizeof(flags));
+
 		if (bind(sfd, rp->ai_addr, rp->ai_addrlen) == 0)
 			return sfd;
 		else

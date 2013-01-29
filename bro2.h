@@ -1,6 +1,7 @@
 #ifndef BRO2_H_
 #define BRO2_H_
 
+/* be careful comparing these to (signed) chars, sign extention will occur. */
 #define BRO2_MSG_PREFIX 0x1bu
 #define BRO2_MSG_SUFFIX 0x80u
 
@@ -22,6 +23,5 @@ static const char *bro2_modes[] = {
 	"C256",
 	"TEXT",		/* noted in usb driver */
 };
-
 
 #endif
