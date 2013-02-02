@@ -11,6 +11,9 @@
 #include <ctype.h>
 #include <stdbool.h>
 
+#include <net-snmp/net-snmp-config.h>
+#include <net-snmp/net-snmp-includes.h>
+
 #include "penny/tcp.h"
 #include "bro2.h"
 
@@ -83,11 +86,65 @@ SANE_Status sane_init(SANE_Int *ver, SANE_Auth_Callback authorize)
 void sane_exit(void)
 {}
 
+static void bro2_snmp_probe_all(void)
+{
+	struct snmp_session session, *ss;
+	struct snmp_pdu *pdu, *response;
+	oid anOID[MAX_OID_LEN];
+	size_t anOID_len = MAX_OID_LEN;
+
+	struct variable_list *vars;
+	int status;
+
+	init_snmp("snmpapp");
+	snmp_sess_init(&session);
+
+	session.peername = (char *)"255.255.255.255";
+	session.flags |= SNMP_FLAGS_UDP_BROADCAST;
+	session.version = SNMP_VERSION_1;
+	session.community = (unsigned char *)"public";
+	session.community_len = strlen((char *)session.community);
+
+	SOCK_STARTUP;
+
+	ss = snmp_open(&session);
+	if (!ss) {
+		snmp_perror("ack");
+		snmp_log(LOG_ERR, "failed to open session\n");
+		goto out_setup;
+	}
+
+	pdu = snmp_pdu_create(SNMP_MSG_GET);
+	read_objid(".1.3.6.1.2.1.1.1.0", anOID, &anOID_len);
+
+	snmp_add_null_var(pdu, anOID, anOID_len);
+
+	status = snmp_synch_response(ss, pdu, &response);
+	if (status != STAT_SUCCESS || response->errstat != SNMP_ERR_NOERROR) {
+		snmp_perror("sync_response");
+		snmp_log(LOG_ERR, "failed to get respose\n");
+		goto out_response;
+	}
+
+	for (vars = response->variables; vars; vars = vars->next_variable) {
+		print_variable(vars->name, vars->name_length, vars);
+	}
+
+out_response:
+	if (response)
+		snmp_free_pdu(response);
+	snmp_close(ss);
+out_setup:
+	SOCK_CLEANUP;
+	return;
+}
+
 /* return an empty list of detected devices */
 static SANE_Device *_device_list = NULL, **device_list = &_device_list;
 SANE_Status sane_get_devices(const SANE_Device ***dev_list,
 			     SANE_Bool local_only)
 {
+	bro2_snmp_probe_all();
 	*dev_list = (const SANE_Device **)device_list;
 	return SANE_STATUS_GOOD;
 }
@@ -345,6 +402,8 @@ static int bro2_recv_I_response(struct bro2_device *dev)
 		DBG(1, "end doesn't match up.\n");
 		return -1;
 	}
+
+
 
 	/* TODO: Do something with it */
 	return 0;

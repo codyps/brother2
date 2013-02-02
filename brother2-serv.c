@@ -19,7 +19,7 @@
 #define peer_err(peer, fmt, ...) fprintf(stderr, fmt ##, __VA_ARGS__)
 
 struct peer {
-	ev_io w;
+	ev_io w; /* I'm lazy & require this to be the first member */
 	struct sockaddr_storage addr;
 	socklen_t addr_len;
 	uint8_t buf[128];
@@ -79,7 +79,6 @@ static uint8_t *tokenize_packet(uint8_t **pos)
 	}
 }
 
-static int peer_ct;
 
 static int peer_parse_msg(struct peer *peer)
 {
@@ -139,10 +138,11 @@ static void print_bytes_as_cstring(void *data, size_t data_len, FILE *f)
 	putc('"', f);
 }
 
+static int peer_ct;
 static void peer_cb(EV_P_ ev_io *w, int revents)
 {
 	fprintf(stderr, "PEER EVENT\n");
-	struct peer *peer= (struct peer *)w;
+	struct peer *peer = (struct peer *)w;
 	ssize_t r = read(w->fd, peer->buf + peer->pos, sizeof(peer->buf) - peer->pos);
 	if (r == 0) {
 		fprintf(stderr, "\tdisconnected.\n");
@@ -193,7 +193,6 @@ close_con:
 	close(w->fd);
 	free(peer);
 }
-
 
 static struct peer *accept_peer;
 static void accept_cb(EV_P_ ev_io *w, int revents)
