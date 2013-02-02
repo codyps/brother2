@@ -12,6 +12,8 @@
 
 #include "penny/tcp.h"
 #include "penny/fd.h"
+#include "penny/socket.h"
+
 #include "bro2.h"
 
 #define peer_err(peer, fmt, ...) fprintf(stderr, fmt ##, __VA_ARGS__)
@@ -268,7 +270,7 @@ int main(int argc, char **argv)
 		return 1;
 	}
 
-	int fd = tcp_bind(res);
+	int fd = socket_bind(res);
 	if (fd == -1) {
 		fprintf(stderr, "could not bind to addr %s, port %s: %s\n", bind_addr, port, strerror(errno));
 		return 1;
