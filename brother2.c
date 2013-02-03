@@ -86,17 +86,101 @@ SANE_Status sane_init(SANE_Int *ver, SANE_Auth_Callback authorize)
 void sane_exit(void)
 {}
 
+
+
+/*
+ * simple printing of returned data
+ */
+static int print_result (int status, struct snmp_session *sp, struct snmp_pdu *pdu)
+{
+  char buf[1024];
+  struct variable_list *vp;
+  int ix;
+  struct timeval now;
+  struct timezone tz;
+  struct tm *tm;
+
+  gettimeofday(&now, &tz);
+  tm = localtime(&now.tv_sec);
+  fprintf(stdout, "%.2d:%.2d:%.2d.%.6lu ", tm->tm_hour, tm->tm_min, tm->tm_sec,
+          (long unsigned)now.tv_usec);
+  switch (status) {
+  case STAT_SUCCESS:
+    vp = pdu->variables;
+    if (pdu->errstat == SNMP_ERR_NOERROR) {
+      while (vp) {
+        snprint_variable(buf, sizeof(buf), vp->name, vp->name_length, vp);
+        fprintf(stdout, "%s: %s\n", sp->peername, buf);
+	vp = vp->next_variable;
+      }
+    }
+    else {
+      for (ix = 1; vp && ix != pdu->errindex; vp = vp->next_variable, ix++)
+        ;
+      if (vp) snprint_objid(buf, sizeof(buf), vp->name, vp->name_length);
+      else strcpy(buf, "(none)");
+      fprintf(stdout, "%s: %s: %s\n",
+      	sp->peername, buf, snmp_errstring(pdu->errstat));
+    }
+    return 1;
+  case STAT_TIMEOUT:
+    fprintf(stdout, "%s: Timeout\n", sp->peername);
+    return 0;
+  case STAT_ERROR:
+    snmp_perror(sp->peername);
+    return 0;
+  }
+  return 0;
+}
+
+static void print_index_addr_pair(netsnmp_indexed_addr_pair *addr_pair)
+{
+	char host[128], serv[128];
+
+	int r = getnameinfo(&addr_pair->remote_addr.sa, sizeof(addr_pair->remote_addr),
+			host, sizeof(host), serv, sizeof(serv),
+			NI_DGRAM | NI_NUMERICHOST | NI_NUMERICSERV);
+	if (r != 0) {
+		fprintf(stderr, "getnameinfo failed: %s\n", gai_strerror(r));
+		return;
+	}
+
+	printf("if_index: %d host: %s serv: %s\n", addr_pair->if_index, host, serv);
+}
+
+static int bro2_snmp_async_cb(int operation, struct snmp_session *sp, int reqid,
+			struct snmp_pdu *pdu, void *data)
+{
+	netsnmp_indexed_addr_pair *addr_pair = pdu->transport_data;
+
+	if (sizeof(*addr_pair) != pdu->transport_data_length) {
+		snmp_log(LOG_ERR, "unexpected transport data len: got %d, want %zu\n",
+				pdu->transport_data_length, sizeof(*addr_pair));
+	}
+
+	print_index_addr_pair(addr_pair);
+
+	if (operation == NETSNMP_CALLBACK_OP_RECEIVED_MESSAGE) {
+		print_result(STAT_SUCCESS, sp, pdu);
+		return 0;
+	} else {
+		printf("NOT a recv %d\n", operation);
+		print_result(STAT_TIMEOUT, sp, pdu);
+		bool *timed_out = data;
+		*timed_out = true;
+		return 1;
+	}
+}
+
 static void bro2_snmp_probe_all(void)
 {
 	struct snmp_session session, *ss;
-	struct snmp_pdu *pdu, *response;
+	struct snmp_pdu *pdu;
 	oid anOID[MAX_OID_LEN];
 	size_t anOID_len = MAX_OID_LEN;
+	bool timed_out = false;
 
-	struct variable_list *vars;
-	int status;
-
-	init_snmp("snmpapp");
+	init_snmp("brother2");
 	snmp_sess_init(&session);
 
 	session.peername = (char *)"255.255.255.255";
@@ -119,20 +203,29 @@ static void bro2_snmp_probe_all(void)
 
 	snmp_add_null_var(pdu, anOID, anOID_len);
 
-	status = snmp_synch_response(ss, pdu, &response);
-	if (status != STAT_SUCCESS || response->errstat != SNMP_ERR_NOERROR) {
-		snmp_perror("sync_response");
-		snmp_log(LOG_ERR, "failed to get respose\n");
-		goto out_response;
+	int reqid = snmp_async_send(ss, pdu, bro2_snmp_async_cb, &timed_out);
+	if (reqid == 0) {
+		snmp_perror("async_send");
+		snmp_log(LOG_ERR, "failed to send broadcast snmp\n");
+		goto out_close;
 	}
 
-	for (vars = response->variables; vars; vars = vars->next_variable) {
-		print_variable(vars->name, vars->name_length, vars);
+	snmp_log(LOG_INFO, "async send reqid = %d\n", reqid);
+
+	while (!timed_out) {
+		int fds = 0, block = 1;
+		fd_set fdset;
+		struct timeval timeout;
+		FD_ZERO(&fdset);
+		snmp_select_info(&fds, &fdset, &timeout, &block);
+		fds = select(fds, &fdset, NULL, NULL, block ? NULL : &timeout);
+		if (fds)
+			snmp_read(&fdset);
+		else
+			snmp_timeout(); /* calls the callback if timeout has occured. */
 	}
 
-out_response:
-	if (response)
-		snmp_free_pdu(response);
+out_close:
 	snmp_close(ss);
 out_setup:
 	SOCK_CLEANUP;
