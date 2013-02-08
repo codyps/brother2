@@ -27,4 +27,20 @@ static const char *bro2_modes[] = {
 	"TEXT",		/* noted in usb driver */
 };
 
+/* An I msg responce is composed of 7 numbers. */
+#define BRO2_MSG_I_XRES 0
+#define BRO2_MSG_I_YRES 1
+#define BRO2_MSG_I_UNK0 2
+
+/* Extremely pesimistic line length maximum */
+#define BRO2_MAX_LINE_SZ (~(uint16_t)0)
+#define BRO2_MAX_LINE_MSG_SZ (BRO2_MAX_LINE_SZ + 3) /* type + 2byte length */
+
+/* Line types */
+#define BRO2_LINE_TYPE_GRAY  0x40
+#define BRO2_LINE_TYPE_BW    0x42
+#define BRO2_LINE_TYPE_RED   0x44
+#define BRO2_LINE_TYPE_GREEN 0x48
+#define BRO2_LINE_TYPE_BLUE  0x4c
+
 #endif

@@ -62,7 +62,7 @@ struct bro2_device {
 			int tl_x, tl_y, br_x, br_y;
 			int brightness, contrast;
 		};
-		int int_opts[6];
+		int int_opts[OPT_FIRST_STR];
 	};
 
 	union {
@@ -71,8 +71,13 @@ struct bro2_device {
 			char compress[SETTING_STR_LEN];
 			char d[SETTING_STR_LEN];
 		};
-		char str_opts[3][SETTING_STR_LEN];
+		char str_opts[OPT_D - OPT_FIRST_STR + 1][SETTING_STR_LEN];
 	};
+
+	SANE_Parameters param;
+
+	size_t line_buffer_pos;
+	uint8_t line_buffer[BRO2_MAX_LINE_MSG_SZ]; /* ~64kbytes, ~16 pages*/
 };
 
 SANE_Status sane_init(SANE_Int *ver, SANE_Auth_Callback authorize)
@@ -84,8 +89,8 @@ SANE_Status sane_init(SANE_Int *ver, SANE_Auth_Callback authorize)
 }
 
 void sane_exit(void)
-{}
-
+{
+}
 
 
 /*
@@ -151,23 +156,17 @@ static void print_index_addr_pair(netsnmp_indexed_addr_pair *addr_pair)
 static int bro2_snmp_async_cb(int operation, struct snmp_session *sp, int reqid,
 			struct snmp_pdu *pdu, void *data)
 {
-	netsnmp_indexed_addr_pair *addr_pair = pdu->transport_data;
-
-	if (sizeof(*addr_pair) != pdu->transport_data_length) {
-		snmp_log(LOG_ERR, "unexpected transport data len: got %d, want %zu\n",
-				pdu->transport_data_length, sizeof(*addr_pair));
-	}
-
-	print_index_addr_pair(addr_pair);
-
 	if (operation == NETSNMP_CALLBACK_OP_RECEIVED_MESSAGE) {
-		print_result(STAT_SUCCESS, sp, pdu);
-		return 0;
+		netsnmp_indexed_addr_pair *addr_pair = pdu->transport_data;
+		if (sizeof(*addr_pair) != pdu->transport_data_length) {
+			snmp_log(LOG_ERR, "unexpected transport data len: got %d, want %zu\n",
+					pdu->transport_data_length, sizeof(*addr_pair));
+		}
+		print_index_addr_pair(addr_pair);
+		print_result(0, sp, pdu);
+		return 1;
 	} else {
-		printf("NOT a recv %d\n", operation);
-		print_result(STAT_TIMEOUT, sp, pdu);
-		bool *timed_out = data;
-		*timed_out = true;
+		snmp_log(LOG_DEBUG, "smtp timeout\n");
 		return 1;
 	}
 }
@@ -212,13 +211,22 @@ static void bro2_snmp_probe_all(void)
 
 	snmp_log(LOG_INFO, "async send reqid = %d\n", reqid);
 
-	while (!timed_out) {
-		int fds = 0, block = 1;
+	/* FIXME: netsnmp doesn't know how to handle reciving multiple
+	 * responses from a single packet.
+	 * - Indicating "failure" in the callback means that
+	 *   snmp_resend_request() gets called until the retries are used up.
+	 * - Indicating "success" or having all the retries used up results in
+	 *   the request being destroyed and the pdu being freed.
+	 *
+	 */
+	time_t endtime = time(NULL) + 2;
+	while (time(NULL) < endtime) {
+		int fds = 0, block = 0;
 		fd_set fdset;
-		struct timeval timeout;
+		struct timeval timeout = { .tv_usec = 5000 };
 		FD_ZERO(&fdset);
 		snmp_select_info(&fds, &fdset, &timeout, &block);
-		fds = select(fds, &fdset, NULL, NULL, block ? NULL : &timeout);
+		fds = select(fds, &fdset, NULL, NULL, &timeout);
 		if (fds)
 			snmp_read(&fdset);
 		else
@@ -265,19 +273,36 @@ static int bro2_connect(struct bro2_device *dev)
 	return 0;
 }
 
+static void bro2_set_area(struct bro2_device *dev)
+{
+}
+
 static void bro2_init(struct bro2_device *dev, const char *addr)
 {
-	memset(dev, 0, sizeof(*dev));
+	*dev = (typeof(*dev)) {
+		.fd = -1,
+		.addr = addr,
 
-	dev->fd = -1;
-	dev->addr = addr;
+		/* defaults */
+		.x_res = 300,
+		.y_res = 300,
+		.brightness = 50,
+		.contrast = 50,
+		.mode = "CGREY",
+		.d = "SIN",
+		.compress = "NONE",
 
-	/* set some default values */
-	dev->x_res = dev->y_res = 300;
-	strcpy(dev->mode, "CGREY");
-	strcpy(dev->d, "SIN");
-	strcpy(dev->compress, "NONE");
-	dev->brightness = dev->contrast = 50;
+		.param = {
+			.format = SANE_FRAME_GRAY, /* XXX: fixed to this for debugging */
+			.last_frame = SANE_FALSE,  /* will need to be modified
+						      to switch when scan is
+						      complete */
+			.bytes_per_line = 0,  /* FIXME: unknown */
+			.pixels_per_line = 0, /* FIXME: unknown */
+			.lines = -1, /* -1 == unknown, call sane_read() until SANE_STATUS_EOF */
+			.depth = 1,	      /* Or 8? */
+		},
+	};
 }
 
 /* Must be called immediately after connecting, status is only sent at that
@@ -360,6 +385,12 @@ static int bro2_send_I(struct bro2_device *dev)
 	return 0;
 }
 
+static void bro2_update_param(struct bro2_device *dev)
+{
+	dev->param.pixels_per_line = dev->br_x - dev->tl_x;
+	dev->param.bytes_per_line  = dev->param.pixels_per_line * dev->param.depth;
+}
+
 static int bro2_send_X(struct bro2_device *dev)
 {
 	char buf[512];
@@ -389,6 +420,20 @@ static int bro2_send_X(struct bro2_device *dev)
 
 	ssize_t r = write(dev->fd, buf, l);
 	if (r != l) {
+		DBG(1, "write failed: %zd %s\n", r, strerror(errno));
+		return -1;
+	}
+
+	bro2_update_param(dev);
+
+	return 0;
+}
+
+static int bro2_send_R(struct bro2_device *dev)
+{
+	char buf[] = "\x1bR\n";
+	ssize_t r = write(dev->fd, buf, sizeof(buf) - 1);
+	if (r != (sizeof(buf) - 1)) {
 		DBG(1, "write failed: %zd %s\n", r, strerror(errno));
 		return -1;
 	}
@@ -460,23 +505,13 @@ static int bro2_recv_I_response(struct bro2_device *dev)
 		return -1;
 	}
 
-	hex_dump(buf, l);
-
-#if 0
-	if (buf[l-1] != 0x80) {
-		DBG(1, "wrong terminator: %c %x\n", buf[l-1], buf[l-1]);
-		return -1;
-	}
-#endif
-	buf[l] = '\0';
-
 	if (buf[0] != 0x1b) {
-		DBG(1, "wrong start: %c %x\n", buf[0], buf[0]);
+		DBG(1, "wrong start byte: %c %x\n", buf[0], buf[0]);
 		return -1;
 	}
 
 	if (buf[1] != 0x00) {
-		DBG(1, "wrong 2: %c %x\n", buf[1], buf[1]);
+		DBG(1, "wrong 2nd byte: %c %x\n", buf[1], buf[1]);
 		return -1;
 	}
 
@@ -496,7 +531,7 @@ static int bro2_recv_I_response(struct bro2_device *dev)
 		return -1;
 	}
 
-
+	/* Fixup the resolution based on info */
 
 	/* TODO: Do something with it */
 	return 0;
@@ -719,11 +754,9 @@ SANE_Status sane_control_option(SANE_Handle h, SANE_Int n, SANE_Action a, void *
 
 SANE_Status sane_get_parameters(SANE_Handle h, SANE_Parameters *p)
 {
-	p->lines = -1; /* we don't know */
-	//p->depth = ;
-	//p->bytes_per_line = ;
-	//p->pixels_per_line = ;
-	return SANE_STATUS_IO_ERROR;
+	struct bro2_device *dev = h;
+	*p = dev->param;
+	return SANE_STATUS_GOOD;
 }
 
 SANE_Status sane_start(SANE_Handle h)
@@ -757,7 +790,13 @@ have changed.
 		return SANE_STATUS_IO_ERROR;
 	}
 
-	return SANE_STATUS_IO_ERROR;
+	r = bro2_send_X(dev);
+	if (r) {
+		DBG(1, "send X failed\n");
+		return SANE_STATUS_IO_ERROR;
+	}
+
+	return SANE_STATUS_GOOD;
 }
 
 SANE_Status sane_read(SANE_Handle h, SANE_Byte *buf, SANE_Int maxlen, SANE_Int *len)
@@ -773,14 +812,69 @@ SANE STATUS NO MEM: An insufficent amount of memory is available.
 SANE STATUS ACCESS DENIED: Access to the device has been denied due to insufficient
 or invalid authentication.
 #endif
-	return SANE_STATUS_IO_ERROR;
+	struct bro2_device *dev = h;
+
+	ssize_t r = read(dev->fd, dev->line_buffer + dev->line_buffer_pos, sizeof(dev->line_buffer) - dev->line_buffer_pos);
+
+	if (r == -1) {
+		switch (errno) {
+		case EAGAIN:
+			/* apparently we are non-blocking */
+			*len = 0;
+			return SANE_STATUS_GOOD;
+		default:
+			DBG(1, "sane_read fail: %d %s\n", errno, strerror(errno));
+			return SANE_STATUS_IO_ERROR;
+		}
+	} else if (r == 0) {
+		/* we've been disconnected, probably */
+		close(dev->fd);
+		dev->fd = -1;
+		return SANE_STATUS_IO_ERROR;
+	}
+
+	dev->line_buffer_pos += r;
+
+	if (dev->line_buffer_pos < 3) {
+		/* not enough data */
+		*len = 0;
+		return SANE_STATUS_GOOD;
+	}
+
+	/* Determine the type */
+	DBG(1, "line type: %d\n", dev->line_buffer[0]);
+	uint16_t line_len = dev->line_buffer[1] + (dev->line_buffer[2] << 8);
+	DBG(1, "line length: %d\n", line_len);
+
+	if (dev->line_buffer_pos - 3 < line_len) {
+		/* not enough data */
+		*len = 0;
+		return SANE_STATUS_GOOD;
+	}
+
+	/* enough data, write it out */
+
+	if (dev->line_buffer_pos - 3 > maxlen) {
+		/* not enough space */
+		*len = 0;
+		return SANE_STATUS_NO_MEM;
+	}
+
+	memcpy(buf, dev->line_buffer + 3, dev->line_buffer_pos - 3);
+
+	*len = dev->line_buffer_pos - 3;
+	return SANE_STATUS_GOOD;
 }
 
 void sane_cancel(SANE_Handle h)
 {
 	/* TODO: close & reopen? */
 	struct bro2_device *dev = h;
-	close(dev->fd);
+	if (dev->fd != -1) {
+		bro2_send_R(dev);
+		close(dev->fd);
+		dev->fd = -1;
+	}
 }
 
 SANE_Status sane_set_io_mode(SANE_Handle h, SANE_Bool m)
@@ -792,6 +886,9 @@ SANE STATUS UNSUPPORTED: The backend does not support the requested I/O mode.
 	struct bro2_device *dev = h;
 	if (dev->fd == -1)
 		return SANE_STATUS_INVAL;
+
+	if (m == SANE_FALSE)
+		return SANE_STATUS_GOOD;
 
 	return SANE_STATUS_UNSUPPORTED;
 }
