@@ -482,16 +482,24 @@ static int parse_num_list(void const *v_buf, size_t buf_bytes, int *nums,
 	return i;
 }
 
-static void hex_dump(char *buf, size_t buf_len) {
+static void hex_dump(void *vbuf, size_t buf_len, FILE *f) {
 	int i;
+	uint8_t *buf = vbuf;
 	for (i = 0; i < buf_len; i++) {
-		if (!iscntrl(buf[i])) {
-			fprintf(stderr, " %c ", buf[i]);
+		fprintf(f, "%02X ", buf[i]);
+	}
+}
+
+static void char_dump(void *vbuf, size_t buf_len, FILE *f) {
+	int i;
+	uint8_t *buf = vbuf;
+	for (i = 0; i < buf_len; i++) {
+		if (!iscntrl(buf[i]) && isprint(buf[i])) {
+			fprintf(f, " %c ", (char)buf[i]);
 		} else {
-			fprintf(stderr, "%02X ", buf[i]);
+			fprintf(f, "%02X ", buf[i]);
 		}
 	}
-	putchar('\n');
 }
 
 static int bro2_recv_I_response(struct bro2_device *dev)
@@ -532,8 +540,12 @@ static int bro2_recv_I_response(struct bro2_device *dev)
 	}
 
 	/* Fixup the resolution based on info */
+	dev->x_res = nums[BRO2_MSG_I_XRES];
+	dev->y_res = nums[BRO2_MSG_I_YRES];
 
-	/* TODO: Do something with it */
+	dev->br_x = nums[BRO2_MSG_I_MAX_X];
+	dev->br_y = nums[BRO2_MSG_I_MAX_Y];
+
 	return 0;
 }
 
@@ -814,7 +826,9 @@ or invalid authentication.
 #endif
 	struct bro2_device *dev = h;
 
+	DBG(1, "reading...\n");
 	ssize_t r = read(dev->fd, dev->line_buffer + dev->line_buffer_pos, sizeof(dev->line_buffer) - dev->line_buffer_pos);
+	DBG(1, "done reading, got %zd bytes\n", r);
 
 	if (r == -1) {
 		switch (errno) {
@@ -834,6 +848,8 @@ or invalid authentication.
 	}
 
 	dev->line_buffer_pos += r;
+	hex_dump(dev->line_buffer, dev->line_buffer_pos, stdout);
+	putchar('\n');
 
 	if (dev->line_buffer_pos < 3) {
 		/* not enough data */

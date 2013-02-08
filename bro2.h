@@ -31,6 +31,10 @@ static const char *bro2_modes[] = {
 #define BRO2_MSG_I_XRES 0
 #define BRO2_MSG_I_YRES 1
 #define BRO2_MSG_I_UNK0 2
+#define BRO2_MSG_I_UNK1 3
+#define BRO2_MSG_I_MAX_X 4 /* XXX: correctness of name is questionable */
+#define BRO2_MSG_I_UNK2 5
+#define BRO2_MSG_I_MAX_Y 6 /* XXX: correctness of name is questionable */
 
 /* Extremely pesimistic line length maximum */
 #define BRO2_MAX_LINE_SZ (~(uint16_t)0)
