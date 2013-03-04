@@ -13,6 +13,7 @@
 #include "penny/tcp.h"
 #include "penny/fd.h"
 #include "penny/socket.h"
+#include "penny/print.h"
 
 #include "bro2.h"
 
@@ -50,13 +51,6 @@ static ssize_t peer_scan_buf_for_end_byte(struct peer *p)
 	}
 
 	return -1;
-}
-
-static const char hex_lookup[] = "0123456789abcdef";
-static void print_hex_byte(uint8_t byte, FILE *f)
-{
-	putc(hex_lookup[byte >> 4], f);
-	putc(hex_lookup[byte & 0x0f], f);
 }
 
 /* initially set pos to the start of the packet. */
@@ -99,44 +93,6 @@ static int peer_parse_msg(struct peer *peer)
 	return 0;
 }
 
-static void print_bytes_as_cstring(void *data, size_t data_len, FILE *f)
-{
-	putc('"', f);
-	char *p = data;
-	size_t i;
-	for (i = 0; i < data_len; i++) {
-		char c = p[i];
-		if (iscntrl(c) || !isprint(c)) {
-			switch (c) {
-			case '\0':
-				putc('\\', f);
-				putc('0', f);
-				break;
-			case '\n':
-				putc('\\', f);
-				putc('n', f);
-				break;
-			case '\r':
-				putc('\\', f);
-				putc('r', f);
-				break;
-			default:
-				putc('\\', f);
-				putc('x', f);
-				print_hex_byte(c, f);
-			}
-		} else  {
-			switch (c) {
-			case '"':
-			case '\\':
-				putc('\\', f);
-			default:
-				putc(c, f);
-			}
-		}
-	}
-	putc('"', f);
-}
 
 static int peer_ct;
 static void peer_cb(EV_P_ ev_io *w, int revents)
