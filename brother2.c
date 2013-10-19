@@ -16,6 +16,7 @@
 #include <net-snmp/net-snmp-includes.h>
 
 #include "penny/tcp.h"
+#include "penny/print.h"
 #include "bro2.h"
 
 #define ARRAY_SZ(a) (sizeof(a) / sizeof(a[0]))
@@ -509,26 +510,6 @@ static int parse_num_list(void const *v_buf, size_t buf_bytes, int *nums,
 	*end = (char *)buf + p;
 
 	return i;
-}
-
-static void hex_dump(void *vbuf, size_t buf_len, FILE *f) {
-	int i;
-	uint8_t *buf = vbuf;
-	for (i = 0; i < buf_len; i++) {
-		fprintf(f, "%02X ", buf[i]);
-	}
-}
-
-static void char_dump(void *vbuf, size_t buf_len, FILE *f) {
-	int i;
-	uint8_t *buf = vbuf;
-	for (i = 0; i < buf_len; i++) {
-		if (!iscntrl(buf[i]) && isprint(buf[i])) {
-			fprintf(f, " %c ", (char)buf[i]);
-		} else {
-			fprintf(f, "%02X ", buf[i]);
-		}
-	}
 }
 
 static int bro2_recv_I_response(struct bro2_device *dev)
