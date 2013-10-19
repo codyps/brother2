@@ -1,4 +1,5 @@
 #define BACKEND_NAME bro2
+#define _GNU_SOURCE
 
 #include <stddef.h>
 #include <sane/sane.h>
@@ -138,6 +139,35 @@ static int print_result (int status, struct snmp_session *sp, struct snmp_pdu *p
   return 0;
 }
 
+static const char *vendor_str = "Brother";
+static const char *type_str = "flatbed scanner";
+static size_t num_devs = 0;
+static SANE_Device *_device_list = NULL, **device_list = &_device_list;
+
+static void add_device(SANE_Device *d)
+{
+	num_devs ++;
+	_device_list = realloc(_device_list, num_devs + 1);
+	if (!_device_list)
+		abort();
+
+	_device_list[num_devs] = d;
+	_device_list[num_devs + 1] = NULL;
+}
+
+static SANE_Device *new_device(char *host, char *model)
+{
+	SANE_Device *d = malloc(sizeof(*d));
+	if (!d)
+		abort();
+
+	asprintf(&d->name, "bro2:%s", host);
+	d->model = strdup(model);
+	d->vendor = vendor_str;
+	d->type = type_str;
+
+}
+
 static void print_index_addr_pair(netsnmp_indexed_addr_pair *addr_pair)
 {
 	char host[128], serv[128];
@@ -241,7 +271,6 @@ out_setup:
 }
 
 /* return an empty list of detected devices */
-static SANE_Device *_device_list = NULL, **device_list = &_device_list;
 SANE_Status sane_get_devices(const SANE_Device ***dev_list,
 			     SANE_Bool local_only)
 {
