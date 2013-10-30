@@ -1,5 +1,7 @@
 #define BACKEND_NAME bro2
+#ifndef _GNU_SOURCE
 #define _GNU_SOURCE
+#endif
 
 #include <stddef.h>
 #include <sane/sane.h>
@@ -11,6 +13,9 @@
 #include <errno.h>
 #include <ctype.h>
 #include <stdbool.h>
+
+#include <sys/socket.h>
+#include <netdb.h>
 
 #include <net-snmp/net-snmp-config.h>
 #include <net-snmp/net-snmp-includes.h>
@@ -144,17 +149,17 @@ static int print_result (int status, struct snmp_session *sp, struct snmp_pdu *p
 static const char *vendor_str = "Brother";
 static const char *type_str = "flatbed scanner";
 static size_t num_devs = 0;
-static SANE_Device *_device_list = NULL, **device_list = &_device_list;
+static SANE_Device **device_list = NULL;
 
 static void add_device(SANE_Device *d)
 {
 	num_devs ++;
-	_device_list = realloc(_device_list, num_devs + 1);
-	if (!_device_list)
+	device_list = realloc(device_list, num_devs + 1);
+	if (!device_list)
 		abort();
 
-	_device_list[num_devs] = d;
-	_device_list[num_devs + 1] = NULL;
+	device_list[num_devs] = d;
+	device_list[num_devs + 1] = NULL;
 }
 
 static SANE_Device *new_device(char *host, char *model)
@@ -163,7 +168,9 @@ static SANE_Device *new_device(char *host, char *model)
 	if (!d)
 		abort();
 
-	asprintf(&d->name, "bro2:%s", host);
+	char *n = NULL;
+	asprintf(&n, "bro2:%s", host);
+	d->name = n;
 	d->model = strdup(model);
 	d->vendor = vendor_str;
 	d->type = type_str;
@@ -284,16 +291,16 @@ SANE_Status sane_get_devices(const SANE_Device ***dev_list,
 static int bro2_connect(struct bro2_device *dev)
 {
 	/* Hook up the connection */
-	struct addrinfo *res;
-	int r = tcp_resolve_as_client(dev->addr, BRO2_PORT_STR, &res);
+	struct addrinfo *res = net_client_lookup(dev->addr, BRO2_PORT_STR,
+						AF_UNSPEC, SOCK_STREAM);
 
-	if (r) {
-		fprintf(stderr, "failed to resolve %s: %s\n",
-				dev->addr, gai_strerror(r));
+	if (!res) {
+		fprintf(stderr, "failed to resolve %s\n",
+				dev->addr);
 		return -1;
 	}
 
-	int fd = tcp_connect(res);
+	int fd = net_connect(res);
 
 	dev->fd = fd;
 	dev->res = res;
@@ -580,7 +587,7 @@ static int bro2_connect_and_get_status(struct bro2_device *dev)
 #define STR(x) STR_(x)
 #define STR_(x) #x
 #define NAME_PREFIX STR(BACKEND_NAME) ":"
-#define NAME_PREFIX_LEN (ARRAY_SZ(NAME_PREFIX) - 1)
+#define NAME_PREFIX_LEN (ARRAY_SIZE(NAME_PREFIX) - 1)
 
 SANE_Status sane_open(SANE_String_Const name, SANE_Handle *h)
 {
@@ -710,7 +717,7 @@ const SANE_Option_Descriptor *sane_get_option_descriptor(SANE_Handle h, SANE_Int
 
 	n--;
 
-	if (n < ARRAY_SZ(mfc7820n_opts)) {
+	if (n < ARRAY_SIZE(mfc7820n_opts)) {
 		return &mfc7820n_opts[n];
 	}
 
@@ -726,7 +733,7 @@ SANE_Status sane_control_option(SANE_Handle h, SANE_Int n, SANE_Action a, void *
 	case SANE_ACTION_GET_VALUE:
 		switch (n) {
 		case OPT_NUM:
-			*(SANE_Int *)v = ARRAY_SZ(mfc7820n_opts) + 1;
+			*(SANE_Int *)v = ARRAY_SIZE(mfc7820n_opts) + 1;
 			break;
 		case OPT_X_RES:
 		case OPT_Y_RES:
@@ -859,7 +866,7 @@ or invalid authentication.
 	}
 
 	dev->line_buffer_pos += r;
-	hex_dump(dev->line_buffer, dev->line_buffer_pos, stdout);
+	print_hex_dump(dev->line_buffer, dev->line_buffer_pos, stdout);
 	putchar('\n');
 
 	if (dev->line_buffer_pos < 3) {
