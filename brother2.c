@@ -14,11 +14,12 @@
 #include <net-snmp/net-snmp-config.h>
 #include <net-snmp/net-snmp-includes.h>
 
-#include "penny/tcp.h"
-#include "penny/print.h"
-#include "bro2.h"
+#include <penny/print.h>
 
-#define ARRAY_SZ(a) (sizeof(a) / sizeof(a[0]))
+#include <ccan/net/net.h>
+#include <ccan/array_size/array_size.h>
+
+#include "bro2.h"
 
 #ifndef NDEBUG
 #include <stdio.h>
