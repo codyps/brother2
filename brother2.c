@@ -170,10 +170,11 @@ static SANE_Device *new_device(char *host, char *model)
 {
 	SANE_Device *d = malloc(sizeof(*d));
 	if (!d)
-		abort();
+		return NULL;
 
 	char *n = NULL;
-	asprintf(&n, "bro2:%s", host);
+	if (asprintf(&n, "bro2:%s", host) < 0)
+		return NULL;
 	d->name = n;
 	d->model = strdup(model);
 	d->vendor = vendor_str;
