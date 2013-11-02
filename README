@@ -27,7 +27,8 @@ Testing
     ./bro2-serv
 
     # This works in gentoo. on arch, the /usr/lib/libsane.so.1 (libsane-dll)
-    # gets loaded first somehow
+    # gets loaded first due to RPATH in /usr/bin/scanadf (the gentoo version
+    # lacks the rpath entry)
     # Built with undefined SANE_DLL
     LD_LIBRARY_PATH=. scanadf -d bro2:127.0.0.1
 
