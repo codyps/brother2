@@ -17,6 +17,9 @@ cflags-bro2-serv = -fno-strict-aliasing # libev :(
 
 TARGETS = libsane-bro2.so bro2-serv
 
+get-deps:
+	apt-get install sane-dev
+
 include base-ccan.mk
 include base.mk
 $(obj-all) : ccan
