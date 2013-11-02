@@ -2,5 +2,5 @@ language: c
 compiler:
         - clang
         - gcc
-script: "make"
+script: make
 install: sudo apt-get install libsane-dev libsnmp-dev

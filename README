@@ -28,7 +28,13 @@ Testing
 
     # This works in gentoo. on arch, the /usr/lib/libsane.so.1 (libsane-dll)
     # gets loaded first somehow
+    # Built with undefined SANE_DLL
     LD_LIBRARY_PATH=. scanadf -d bro2:127.0.0.1
+
+    # For libsane-dll, a dll.d directory with a single config file is created,
+    # containing the word "bro2". This causes libsane-dll to attempt to load
+    # Right now this fails because the major version is 0 instead of 1.
+    SANE_DEBUG_DLL=255 LD_LIBRARY_PATH=. scanadf -L
 
 Or, more idealy, use a real scanner instead of the fake one.
 
