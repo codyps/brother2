@@ -10,7 +10,7 @@
 
 #include <ev.h>
 
-#include "penny/tcp.h"
+#include <ccan/net/net.h>
 #include "penny/fd.h"
 #include "penny/socket.h"
 #include "penny/print.h"
@@ -218,36 +218,39 @@ int main(int argc, char **argv)
 		}
 	}
 
-	struct addrinfo *res;
-	int r = tcp_resolve_listen(bind_addr, port, &res);
-	if (r) {
-		fprintf(stderr, "could not resolve %s: %s\n", bind_addr, gai_strerror(r));
+	struct addrinfo *addr = net_server_lookup_(bind_addr, port, AF_UNSPEC, SOCK_STREAM);
+	if (!addr) {
+		fprintf(stderr, "could not resolve %s\n", bind_addr);
 		return 1;
 	}
 
-	int fd = socket_bind(res);
-	if (fd == -1) {
+	int fds[2];
+	int num_fds = net_bind(addr, fds);
+	if (num_fds < 0) {
 		fprintf(stderr, "could not bind to addr %s, port %s: %s\n", bind_addr, port, strerror(errno));
 		return 1;
 	}
 
-	freeaddrinfo(res);
+	freeaddrinfo(addr);
 
-	r = listen(fd, 128);
-	if (r == -1) {
-		fprintf(stderr, "could not listen.\n");
-		return 1;
+	int i;
+	ev_io accept_listener[2];
+	for (i = 0; i < num_fds; i++) {
+		int r = listen(fds[i], 128);
+		if (r == -1) {
+			fprintf(stderr, "could not listen.\n");
+			return 1;
+		}
+
+		r = fd_set_nonblock(fds[i]);
+		if (r < 0) {
+			fprintf(stderr, "could not set socket non-blocking.\n");
+			return 1;
+		}
+
+		ev_io_init(&accept_listener[i], accept_cb, fds[i], EV_READ);
+		ev_io_start(EV_DEFAULT_ &accept_listener[i]);
 	}
-
-	r = fd_set_nonblock(fd);
-	if (r < 0) {
-		fprintf(stderr, "could not set socket non-blocking.\n");
-		return 1;
-	}
-
-	ev_io accept_listener;
-	ev_io_init(&accept_listener, accept_cb, fd, EV_READ);
-	ev_io_start(EV_DEFAULT_ &accept_listener);
 
 	ev_run(EV_DEFAULT_ 0);
 

@@ -5,13 +5,15 @@ LIB_CFLAGS := $(shell net-snmp-config --cflags)
 
 ALL_CFLAGS += -I. -Iccan
 
+CCAN_CFLAGS = $(C_CFLAGS) -fPIC -DCCAN_STR_DEBUG=1
+
 obj-libsane-bro2.so = brother2.o sane_strstatus.o
 ldflags-libsane-bro2.so = -shared $(LIB_LDFLAGS)
-ldflags-libsane-bro2.so = -fpic $(LIB_CFLAGS)
+cflags-libsane-bro2.so = -fPIC $(LIB_CFLAGS)
 
 obj-bro2-serv = brother2-serv.o
-bro2-serv : ALL_LDFLAGS+= -lev
-bro2-serv : ALL_CFLAGS += -fno-strict-aliasing # libev :(
+ldflags-bro2-serv = -lev -Lccan -lccan
+cflags-bro2-serv = -fno-strict-aliasing # libev :(
 
 TARGETS = libsane-bro2.so bro2-serv
 
