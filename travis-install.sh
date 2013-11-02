@@ -10,7 +10,7 @@ PN=net-snmp
 PV=5.7.2
 P=$PN-$PV
 
-wget http://sourceforge.net/projects/net-snmp/files/$PN/$PV/{$P}.tar.gz &&
+wget http://sourceforge.net/projects/net-snmp/files/$PN/$PV/${P}.tar.gz &&
 tar xf ${P}.tar.gz &&
 cd ${P} &&
 ./configure && make && sudo make install
