@@ -175,6 +175,7 @@ static SANE_Device *new_device(char *host, char *model)
 	d->vendor = vendor_str;
 	d->type = type_str;
 
+	return d;
 }
 
 static void print_index_addr_pair(netsnmp_indexed_addr_pair *addr_pair)

@@ -1,4 +1,4 @@
-## base.mk: 4780d32, see https://github.com/jmesmon/trifles.git
+## base.mk: e5bac7b+, see https://github.com/jmesmon/trifles.git
 # Usage:
 #
 # == Targets ==
