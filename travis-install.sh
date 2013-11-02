@@ -1,6 +1,6 @@
 
 
-sudo apt-get install libsane-dev
+sudo apt-get install libsane-dev libev-dev
 
 ## We need a newer version of net-snmp than ubuntu 12.04 has.
 ## Ubuntu has 5.4.3, we need at v5.5+ release for
