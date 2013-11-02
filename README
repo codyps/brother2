@@ -26,6 +26,8 @@ Testing
 
     ./bro2-serv
 
+    # This works in gentoo. on arch, the /usr/lib/libsane.so.1 (libsane-dll)
+    # gets loaded first somehow
     LD_LIBRARY_PATH=. scanadf -d bro2:127.0.0.1
 
 Or, more idealy, use a real scanner instead of the fake one.

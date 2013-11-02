@@ -3,6 +3,10 @@
 #define _GNU_SOURCE
 #endif
 
+#ifdef SANE_DLL
+#include "sane/sanei_backend.h"
+#endif
+
 #include <stddef.h>
 #include <sane/sane.h>
 #include <sane/saneopts.h>

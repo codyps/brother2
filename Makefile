@@ -3,7 +3,7 @@ all::
 LIB_LDFLAGS := $(shell net-snmp-config --libs) -Lccan -lccan
 LIB_CFLAGS := $(shell net-snmp-config --cflags)
 
-ALL_CFLAGS += -I. -Iccan
+ALL_CFLAGS += -I. -Iccan -DSANE_DLL=SANE_DLL
 
 CCAN_CFLAGS = $(C_CFLAGS) -fPIC -DCCAN_STR_DEBUG=1
 
