@@ -21,6 +21,11 @@ Project contains two (2) components:
   bro2-serv :: a server which pretends to be a mfc-7820n. Requires libev.
 
 
+Additional Tools (todo)
+-----------------------
+
+- Configure the button presses on the device (appears to be an snmp set operation)
+
 Testing
 -------
 
