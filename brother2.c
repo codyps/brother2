@@ -140,6 +140,9 @@ static SANE_Device *new_device(char *host, char *model)
 static int bro2_snmp_async_cb(int operation, struct snmp_session *sp, int reqid,
 			struct snmp_pdu *pdu, void *data)
 {
+	int ix;
+	char buf[1024];
+	struct variable_list *vp;
 	if (operation == NETSNMP_CALLBACK_OP_RECEIVED_MESSAGE) {
 		char host[128], serv[128];
 		netsnmp_indexed_addr_pair *addr_pair = pdu->transport_data;
@@ -254,18 +257,19 @@ out_setup:
 	return;
 }
 
-static void free_dev_list(void)
+static void free_device_list(void)
 {
-	if (!dev_list)
+	if (!device_list)
 		return;
 
+	free(device_list);
 }
 
 /* return an empty list of detected devices */
 SANE_Status sane_get_devices(const SANE_Device ***dev_list,
 			     SANE_Bool local_only)
 {
-	free_dev_list();
+	free_device_list();
 
 
 	bro2_snmp_probe_all();
