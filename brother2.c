@@ -34,10 +34,14 @@
 #ifndef NDEBUG
 #include <stdio.h>
 #define pr_debug(...) fprintf(stderr, __VA_ARGS__)
+#ifndef DBG
 #define DBG(n, ...) fprintf(stderr, __VA_ARGS__)
+#endif
 #else
 #define pr_debug(...)
+#ifndef DBG
 #define DBG(n, ...)
+#endif
 #endif
 
 static SANE_Auth_Callback auth;
@@ -95,7 +99,7 @@ struct bro2_device {
 SANE_Status sane_init(SANE_Int *ver, SANE_Auth_Callback authorize)
 {
 	if (ver)
-		ver = 0;
+		*ver = SANE_VERSION_CODE(SANE_CURRENT_MAJOR, 0, 0);
 	auth = authorize;
 	return SANE_STATUS_GOOD;
 }
