@@ -70,7 +70,7 @@ Image Data Types:
 
 Scan Terminators:
 	USB doc: 0xc200 - there is nothing to scan?
-			 0x81 - finished, another page waiting.
+		 0x81 - finished, another page waiting.
 	0x80 - finished.
 
 SNMP is used to set up the "Scan Button" functionality (it sends the IP address to contact in various cases). It also can retrieve a status string ("Scanning").

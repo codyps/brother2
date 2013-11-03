@@ -140,60 +140,88 @@ static SANE_Device *new_device(char *host, char *model)
 static int bro2_snmp_async_cb(int operation, struct snmp_session *sp, int reqid,
 			struct snmp_pdu *pdu, void *data)
 {
+	if (operation != NETSNMP_CALLBACK_OP_RECEIVED_MESSAGE) {
+		DBG(2, "snmp timeout\n");
+		return 1;
+	}
+
 	int ix;
 	char buf[1024];
 	struct variable_list *vp;
-	if (operation == NETSNMP_CALLBACK_OP_RECEIVED_MESSAGE) {
-		char host[128], serv[128];
-		netsnmp_indexed_addr_pair *addr_pair = pdu->transport_data;
+	char host[128], serv[128];
+	netsnmp_indexed_addr_pair *addr_pair = pdu->transport_data;
 
-		if (sizeof(*addr_pair) != pdu->transport_data_length) {
-			DBG(1, "unexpected transport data len: got %d, want %zu\n",
-					pdu->transport_data_length, sizeof(*addr_pair));
-			return 1;
-		}
-
-		int r = getnameinfo(&addr_pair->remote_addr.sa, sizeof(addr_pair->remote_addr),
-			host, sizeof(host), serv, sizeof(serv),
-			NI_DGRAM | NI_NUMERICHOST | NI_NUMERICSERV);
-		if (r != 0) {
-			DBG(1, "getnameinfo failed: %s\n", gai_strerror(r));
-			return 1;
-		}
-
-		DBG(1, "if_index: %d host: %s serv: %s\n", addr_pair->if_index, host, serv);
-
-		vp = pdu->variables;
-		if (pdu->errstat == SNMP_ERR_NOERROR) {
-			while (vp) {
-				snprint_variable(buf, sizeof(buf), vp->name, vp->name_length, vp);
-				fprintf(stdout, "%s: %s\n", sp->peername, buf);
-				vp = vp->next_variable;
-			}
-		} else {
-			for (ix = 1; vp && ix != pdu->errindex; vp = vp->next_variable, ix++)
-				;
-			if (vp)
-				snprint_objid(buf, sizeof(buf), vp->name, vp->name_length);
-			else
-				strcpy(buf, "(none)");
-			fprintf(stdout, "%s: %s: %s\n",
-					sp->peername, buf, snmp_errstring(pdu->errstat));
-		}
-
-		return 1;
-	} else {
-		DBG(2, "smtp timeout\n");
+	if (sizeof(*addr_pair) != pdu->transport_data_length) {
+		DBG(1, "unexpected transport data len: got %d, want %zu\n",
+				pdu->transport_data_length, sizeof(*addr_pair));
 		return 1;
 	}
+
+	int r = getnameinfo(&addr_pair->remote_addr.sa, sizeof(addr_pair->remote_addr),
+		host, sizeof(host), serv, sizeof(serv),
+		NI_DGRAM | NI_NUMERICHOST | NI_NUMERICSERV);
+	if (r != 0) {
+		DBG(1, "getnameinfo failed: %s\n", gai_strerror(r));
+		return 1;
+	}
+
+	DBG(1, "if_index: %d host: %s serv: %s\n", addr_pair->if_index, host, serv);
+
+	vp = pdu->variables;
+
+	if (pdu->errstat != SNMP_ERR_NOERROR) {
+		/* FIXME: Some type of error occured??? */
+		for (ix = 1; vp && ix != pdu->errindex; vp = vp->next_variable, ix++)
+			;
+		if (vp)
+			snprint_objid(buf, sizeof(buf), vp->name, vp->name_length);
+		else
+			strcpy(buf, "(none)");
+		DBG(1, "%s: %s: %s\n",
+				sp->peername, buf, snmp_errstring(pdu->errstat));
+		return 1;
+	}
+
+	while (vp) {
+		snprint_variable(buf, sizeof(buf), vp->name, vp->name_length, vp);
+		fprintf(stdout, "%s: %s\n", sp->peername, buf);
+		vp = vp->next_variable;
+	}
+
+	return 1;
 }
 
 static void bro2_snmp_probe_all(void)
 {
 	struct snmp_session session, *ss;
 	struct snmp_pdu *pdu;
-	oid anOID[MAX_OID_LEN];
-	size_t anOID_len = MAX_OID_LEN;
+
+	/* TODO: figure out if we can reuse these between snmp_add_null_var()
+	 * calls */
+	oid init_oids[5][MAX_OID_LEN];
+	size_t init_oid_lens[5];
+
+	const char *oid_strs[5] = {
+		/* SNMPv2-SMI::enterprises.2435.2.3.9.1.1.7.0
+		 * Brother specific
+		 * STRING: "MFG:Brother;CMD:PJL,PCL,PCLXL,POSTSCRIPT;MDL:MFC-7820N;CLS:PRINTER;"
+		 */
+		".1.3.6.1.4.1.2435.2.3.9.1.1.7.0",
+		/* SNMPv2-MIB::sysName.0 = STRING: BRN_HIJKLM */
+		".1.3.6.1.2.1.1.5.0",
+		/* IF-MIB::ifPhysAddress.1 = STRING: 0:80:77:HI:JK:LM
+		 * MAC Address, note corespondance with sysName.0 ("HIJKLM") */
+		".1.3.6.1.2.1.2.2.1.6.1",
+		/* SNMPv2-SMI::enterprises.2435.2.4.3.1240.1.3.0
+		 * Brother specific, meaning unknown.
+		 * INTEGER: 2198 */
+		".1.3.6.1.4.1.2435.2.4.3.1240.1.3.0",
+		/* SNMPv2-MIB::sysDescr.0 =
+		 * STRING: Brother NC-6200h, Firmware Ver.H  ,MID 8C5-A15,FID 2
+		 */
+		".1.3.6.1.2.1.1.1.0"
+	};
+
 	bool timed_out = false;
 
 	init_snmp("brother2");
@@ -215,9 +243,13 @@ static void bro2_snmp_probe_all(void)
 	}
 
 	pdu = snmp_pdu_create(SNMP_MSG_GET);
-	read_objid(".1.3.6.1.2.1.1.1.0", anOID, &anOID_len);
 
-	snmp_add_null_var(pdu, anOID, anOID_len);
+	int i;
+	for (i = 0; i < ARRAY_SIZE(oid_strs); i++) {
+		init_oid_lens[i] = MAX_OID_LEN;
+		read_objid(oid_strs[i], init_oids[i], &init_oid_lens[i]);
+		snmp_add_null_var(pdu, init_oids[i], init_oid_lens[i]);
+	}
 
 	int reqid = snmp_async_send(ss, pdu, bro2_snmp_async_cb, &timed_out);
 	if (reqid == 0) {
