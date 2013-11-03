@@ -31,15 +31,11 @@
 
 #include "bro2.h"
 
+#ifndef DBG
 #ifndef NDEBUG
 #include <stdio.h>
-#define pr_debug(...) fprintf(stderr, __VA_ARGS__)
-#ifndef DBG
 #define DBG(n, ...) fprintf(stderr, __VA_ARGS__)
-#endif
 #else
-#define pr_debug(...)
-#ifndef DBG
 #define DBG(n, ...)
 #endif
 #endif
@@ -108,52 +104,6 @@ void sane_exit(void)
 {
 }
 
-
-/*
- * simple printing of returned data
- */
-static int print_result (int status, struct snmp_session *sp, struct snmp_pdu *pdu)
-{
-  char buf[1024];
-  struct variable_list *vp;
-  int ix;
-  struct timeval now;
-  struct timezone tz;
-  struct tm *tm;
-
-  gettimeofday(&now, &tz);
-  tm = localtime(&now.tv_sec);
-  fprintf(stdout, "%.2d:%.2d:%.2d.%.6lu ", tm->tm_hour, tm->tm_min, tm->tm_sec,
-          (long unsigned)now.tv_usec);
-  switch (status) {
-  case STAT_SUCCESS:
-    vp = pdu->variables;
-    if (pdu->errstat == SNMP_ERR_NOERROR) {
-      while (vp) {
-        snprint_variable(buf, sizeof(buf), vp->name, vp->name_length, vp);
-        fprintf(stdout, "%s: %s\n", sp->peername, buf);
-	vp = vp->next_variable;
-      }
-    }
-    else {
-      for (ix = 1; vp && ix != pdu->errindex; vp = vp->next_variable, ix++)
-        ;
-      if (vp) snprint_objid(buf, sizeof(buf), vp->name, vp->name_length);
-      else strcpy(buf, "(none)");
-      fprintf(stdout, "%s: %s: %s\n",
-      	sp->peername, buf, snmp_errstring(pdu->errstat));
-    }
-    return 1;
-  case STAT_TIMEOUT:
-    fprintf(stdout, "%s: Timeout\n", sp->peername);
-    return 0;
-  case STAT_ERROR:
-    snmp_perror(sp->peername);
-    return 0;
-  }
-  return 0;
-}
-
 static const char *vendor_str = "Brother";
 static const char *type_str = "flatbed scanner";
 static size_t num_devs = 0;
@@ -187,35 +137,50 @@ static SANE_Device *new_device(char *host, char *model)
 	return d;
 }
 
-static void print_index_addr_pair(netsnmp_indexed_addr_pair *addr_pair)
-{
-	char host[128], serv[128];
-
-	int r = getnameinfo(&addr_pair->remote_addr.sa, sizeof(addr_pair->remote_addr),
-			host, sizeof(host), serv, sizeof(serv),
-			NI_DGRAM | NI_NUMERICHOST | NI_NUMERICSERV);
-	if (r != 0) {
-		fprintf(stderr, "getnameinfo failed: %s\n", gai_strerror(r));
-		return;
-	}
-
-	printf("if_index: %d host: %s serv: %s\n", addr_pair->if_index, host, serv);
-}
-
 static int bro2_snmp_async_cb(int operation, struct snmp_session *sp, int reqid,
 			struct snmp_pdu *pdu, void *data)
 {
 	if (operation == NETSNMP_CALLBACK_OP_RECEIVED_MESSAGE) {
+		char host[128], serv[128];
 		netsnmp_indexed_addr_pair *addr_pair = pdu->transport_data;
+
 		if (sizeof(*addr_pair) != pdu->transport_data_length) {
-			snmp_log(LOG_ERR, "unexpected transport data len: got %d, want %zu\n",
+			DBG(1, "unexpected transport data len: got %d, want %zu\n",
 					pdu->transport_data_length, sizeof(*addr_pair));
+			return 1;
 		}
-		print_index_addr_pair(addr_pair);
-		print_result(0, sp, pdu);
+
+		int r = getnameinfo(&addr_pair->remote_addr.sa, sizeof(addr_pair->remote_addr),
+			host, sizeof(host), serv, sizeof(serv),
+			NI_DGRAM | NI_NUMERICHOST | NI_NUMERICSERV);
+		if (r != 0) {
+			DBG(1, "getnameinfo failed: %s\n", gai_strerror(r));
+			return 1;
+		}
+
+		DBG(1, "if_index: %d host: %s serv: %s\n", addr_pair->if_index, host, serv);
+
+		vp = pdu->variables;
+		if (pdu->errstat == SNMP_ERR_NOERROR) {
+			while (vp) {
+				snprint_variable(buf, sizeof(buf), vp->name, vp->name_length, vp);
+				fprintf(stdout, "%s: %s\n", sp->peername, buf);
+				vp = vp->next_variable;
+			}
+		} else {
+			for (ix = 1; vp && ix != pdu->errindex; vp = vp->next_variable, ix++)
+				;
+			if (vp)
+				snprint_objid(buf, sizeof(buf), vp->name, vp->name_length);
+			else
+				strcpy(buf, "(none)");
+			fprintf(stdout, "%s: %s: %s\n",
+					sp->peername, buf, snmp_errstring(pdu->errstat));
+		}
+
 		return 1;
 	} else {
-		snmp_log(LOG_DEBUG, "smtp timeout\n");
+		DBG(2, "smtp timeout\n");
 		return 1;
 	}
 }
@@ -289,10 +254,20 @@ out_setup:
 	return;
 }
 
+static void free_dev_list(void)
+{
+	if (!dev_list)
+		return;
+
+}
+
 /* return an empty list of detected devices */
 SANE_Status sane_get_devices(const SANE_Device ***dev_list,
 			     SANE_Bool local_only)
 {
+	free_dev_list();
+
+
 	bro2_snmp_probe_all();
 	*dev_list = (const SANE_Device **)device_list;
 	return SANE_STATUS_GOOD;
