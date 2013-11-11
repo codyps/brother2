@@ -3,7 +3,7 @@ compiler:
         - clang
         - gcc
 env:
-	- NO_LTO=1
-	- THIS_IS_A_PLACEHOLDER_FOR_NOTHING=1
+        - NO_LTO=1
+        -
 script: make
 install: ./travis-install.sh
