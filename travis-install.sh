@@ -4,10 +4,14 @@
 #/usr/bin/ld: /usr/local/clang/bin/../lib/LLVMgold.so: error loading plugin
 #/usr/bin/ld: /usr/local/clang/bin/../lib/LLVMgold.so: error in plugin cleanup (ignored)
 #clang: error: linker command failed with exit code 1 (use -v to see invocation)
-sudo add-apt-repository ppa:xorg-edgers/ppa
+#
+## XXX: this actually looks like a binutils issue.
+#
+sudo add-apt-repository -y ppa:xorg-edgers/ppa
+sudo add-apt-repository -y ppa:dns/gnu
 
 sudo apt-get update
-sudo apt-get install libsane-dev libev-dev clang-3.3
+sudo apt-get install libsane-dev libev-dev clang-3.3 binutils
 
 ## We need a newer version of net-snmp than ubuntu 12.04 has.
 ## Ubuntu has 5.4.3, we need at v5.5+ release for
