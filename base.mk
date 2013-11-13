@@ -1,4 +1,4 @@
-## base.mk: f61322b+, see https://github.com/jmesmon/trifles.git
+## base.mk: 8aa5ce1+, see https://github.com/jmesmon/trifles.git
 # Usage:
 #
 # == Targets ==
@@ -115,10 +115,14 @@ endif
 
 DBG_FLAGS = -ggdb3
 
-ifndef NO_LTO
+ifneq ($(NO_LTO),)
 # TODO: use -flto=jobserver
 CFLAGS  ?= -flto $(DBG_FLAGS)
+ifneq ($(CC),clang)
 LDFLAGS ?= $(ALL_CFLAGS) $(OPT) -fuse-linker-plugin
+else
+LDFLAGS ?= $(ALL_CFLAGS) $(OPT)
+endif
 else
 CFLAGS  ?= $(OPT) $(DBG_FLAGS)
 endif
@@ -146,7 +150,7 @@ ALL_CFLAGS += -std=gnu99
 ALL_CFLAGS   += $(C_CFLAGS) $(CFLAGS)
 ALL_CXXFLAGS += $(COMMON_CFLAGS) $(CXXFLAGS)
 
-ifndef NO_BUILD_ID
+ifneq ($(NO_BUILD_ID),)
 LDFLAGS += -Wl,--build-id
 else
 LDFLAGS += -Wl,--build-id=none

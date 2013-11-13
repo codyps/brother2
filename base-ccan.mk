@@ -1,4 +1,4 @@
-## base.mk: f61322b+, see https://github.com/jmesmon/trifles.git
+## base.mk: 8aa5ce1+, see https://github.com/jmesmon/trifles.git
 CCAN_CFLAGS ?= $(C_CFLAGS)
 
 ccan: FORCE

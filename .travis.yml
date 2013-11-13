@@ -2,5 +2,8 @@ language: c
 compiler:
         - clang
         - gcc
+env:
+        - NO_LTO=1
+        -
 script: make
 install: ./travis-install.sh

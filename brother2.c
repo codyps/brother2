@@ -28,6 +28,7 @@
 
 #include <penny/math.h>
 #include <penny/print.h>
+#include <penny/mem.h>
 
 #include <ccan/net/net.h>
 #include <ccan/array_size/array_size.h>
@@ -449,7 +450,7 @@ static int bro2_read_status(struct bro2_device *dev)
 	}
 
 	bool not_good = false;
-	if (!strncmp("-NG ", buf, 4)) {
+	if (memeqstr(buf, r, "-NG ")) {
 		not_good = true;
 	} else if (strncmp("+OK ", buf, 4)) {
 		DBG(1, "Status string not \"+OK\" or \"+NG\" => \"%.*s\"\n", (int)(r - 2), buf);
