@@ -26,9 +26,9 @@
 #include <net-snmp/net-snmp-config.h>
 #include <net-snmp/net-snmp-includes.h>
 
+#include <penny/mem.h>
 #include <penny/math.h>
 #include <penny/print.h>
-#include <penny/mem.h>
 
 #include <ccan/net/net.h>
 #include <ccan/array_size/array_size.h>
@@ -361,6 +361,9 @@ SANE_Status sane_get_devices(const SANE_Device ***dev_list,
 	free_device_list();
 	DBG_INIT();
 
+	if (local_only)
+		return SANE_STATUS_GOOD;
+
 	errno = 0;
 	bro2_snmp_probe_all();
 	*dev_list = (const SANE_Device **)device_list;
@@ -452,7 +455,7 @@ static int bro2_read_status(struct bro2_device *dev)
 	bool not_good = false;
 	if (memeqstr(buf, r, "-NG ")) {
 		not_good = true;
-	} else if (strncmp("+OK ", buf, 4)) {
+	} else if (!memeqstr(buf, r, "+OK ")) {
 		DBG(1, "Status string not \"+OK\" or \"+NG\" => \"%.*s\"\n", (int)(r - 2), buf);
 		return -1;
 	}
@@ -668,23 +671,13 @@ static int bro2_connect_and_get_status(struct bro2_device *dev)
 
 #define STR(x) STR_(x)
 #define STR_(x) #x
-#define NAME_PREFIX STR(BACKEND_NAME) ":"
-#define NAME_PREFIX_LEN (ARRAY_SIZE(NAME_PREFIX) - 1)
 
 SANE_Status sane_open(SANE_String_Const name, SANE_Handle *h)
 {
-	if (strncmp(NAME_PREFIX, name, NAME_PREFIX_LEN)) {
-		return SANE_STATUS_INVAL;
-	}
-
-	const char *n = name + NAME_PREFIX_LEN;
-	/* welp, what type of device do we have here? */
-	/* FIXME: right now, IP address is assumed. */
-
 	struct bro2_device *dev = malloc(sizeof(*dev));
 	*h = dev;
 
-	bro2_init(dev, n);
+	bro2_init(dev, name);
 	int r = bro2_connect_and_get_status(dev);
 	if (r)
 		return r;
