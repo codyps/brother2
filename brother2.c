@@ -7,6 +7,8 @@
 #include "sane/sanei_backend.h"
 #endif
 
+#include "sane/sanei_debug.h"
+
 #include <stddef.h>
 #include <sane/sane.h>
 #include <sane/saneopts.h>
@@ -24,19 +26,25 @@
 #include <net-snmp/net-snmp-config.h>
 #include <net-snmp/net-snmp-includes.h>
 
+#include <penny/math.h>
 #include <penny/print.h>
 
 #include <ccan/net/net.h>
 #include <ccan/array_size/array_size.h>
+#include <ccan/list/list.h>
 
 #include "bro2.h"
 
+#define memstr(haystack, h_size, needle_str) memmem(haystack, h_size, needle_str, strlen(needle_str))
+
+#if 0
 #ifndef DBG
 #ifndef NDEBUG
 #include <stdio.h>
 #define DBG(n, ...) fprintf(stderr, __VA_ARGS__)
 #else
 #define DBG(n, ...)
+#endif
 #endif
 #endif
 
@@ -63,6 +71,7 @@ enum opts {
 };
 
 struct bro2_device {
+	struct list_head list;
 	int fd;
 	const char *addr;
 	struct addrinfo *res;
@@ -97,11 +106,13 @@ SANE_Status sane_init(SANE_Int *ver, SANE_Auth_Callback authorize)
 	if (ver)
 		*ver = SANE_VERSION_CODE(SANE_CURRENT_MAJOR, 0, 0);
 	auth = authorize;
+	DBG_INIT();
 	return SANE_STATUS_GOOD;
 }
 
 void sane_exit(void)
 {
+	/* TODO: required that all allocations are freed */
 }
 
 static const char *vendor_str = "Brother";
@@ -109,32 +120,49 @@ static const char *type_str = "flatbed scanner";
 static size_t num_devs = 0;
 static SANE_Device **device_list = NULL;
 
-static void add_device(SANE_Device *d)
+static int add_device(SANE_Device *d)
 {
-	num_devs ++;
-	device_list = realloc(device_list, num_devs + 1);
+	device_list = realloc(device_list, sizeof(*device_list) * (num_devs + 2));
 	if (!device_list)
-		abort();
+		return -1;
 
 	device_list[num_devs] = d;
 	device_list[num_devs + 1] = NULL;
+	num_devs ++;
+
+	return 0;
 }
 
-static SANE_Device *new_device(char *host, char *model)
+static SANE_Device *_new_device(const char *host, const char *model)
 {
 	SANE_Device *d = malloc(sizeof(*d));
 	if (!d)
 		return NULL;
 
-	char *n = NULL;
-	if (asprintf(&n, "bro2:%s", host) < 0)
-		return NULL;
-	d->name = n;
+	d->name = strdup(host);
+	if (!d->name)
+		goto c1;
 	d->model = strdup(model);
+	if (!d->model)
+		goto c2;
 	d->vendor = vendor_str;
 	d->type = type_str;
 
 	return d;
+c2:
+	free((char *)d->name);
+c1:
+	free(d);
+	return NULL;
+}
+
+static int new_device(const char *host, const char *model)
+{
+	SANE_Device *d = _new_device(host, model);
+	if (!d)
+		return -1;
+
+	return add_device(d);
 }
 
 static int bro2_snmp_async_cb(int operation, struct snmp_session *sp, int reqid,
@@ -165,7 +193,7 @@ static int bro2_snmp_async_cb(int operation, struct snmp_session *sp, int reqid,
 		return 1;
 	}
 
-	DBG(1, "if_index: %d host: %s serv: %s\n", addr_pair->if_index, host, serv);
+	DBG(10, "if_index: %d host: %s serv: %s\n", addr_pair->if_index, host, serv);
 
 	vp = pdu->variables;
 
@@ -178,16 +206,45 @@ static int bro2_snmp_async_cb(int operation, struct snmp_session *sp, int reqid,
 		else
 			strcpy(buf, "(none)");
 		DBG(1, "%s: %s: %s\n",
-				sp->peername, buf, snmp_errstring(pdu->errstat));
+				host, buf, snmp_errstring(pdu->errstat));
 		return 1;
 	}
 
+	struct variable_list *vp_tmp = vp;
 	while (vp) {
 		snprint_variable(buf, sizeof(buf), vp->name, vp->name_length, vp);
-		fprintf(stdout, "%s: %s\n", sp->peername, buf);
+		DBG(1, "%s: (type=%d)  %s\n", host, vp->type, buf);
 		vp = vp->next_variable;
 	}
+	vp = vp_tmp;
 
+	if (!vp)
+		goto non_bro2;
+
+	if (vp->type != 4)
+		goto non_bro2;
+
+	/* OK, that is enough checking for now, add a device */
+	char *maybe_model = memstr(vp->val.string, vp->val_len, ";MDL:");
+	const char *model;
+	char mbuf[256];
+	if (!maybe_model)
+		model = "UNKNOWN";
+	else {
+		maybe_model = maybe_model + 5;
+		char *end = memchr(maybe_model, ';', vp->val_len - (maybe_model - (char *)vp->val.string));
+		if (!end)
+			end = (char *)vp->val.string + vp->val_len;
+
+		size_t model_len = MIN(sizeof(mbuf) - 1, end - maybe_model - 1);
+		memcpy(mbuf, maybe_model, model_len);
+		mbuf[model_len] = '\0';
+		model = mbuf;
+	}
+
+	new_device(host, model);
+
+non_bro2:
 	return 1;
 }
 
@@ -253,12 +310,11 @@ static void bro2_snmp_probe_all(void)
 
 	int reqid = snmp_async_send(ss, pdu, bro2_snmp_async_cb, &timed_out);
 	if (reqid == 0) {
-		snmp_perror("async_send");
-		snmp_log(LOG_ERR, "failed to send broadcast snmp\n");
+		DBG(1, "failed to send broadcast snmp\n");
 		goto out_close;
 	}
 
-	snmp_log(LOG_INFO, "async send reqid = %d\n", reqid);
+	DBG(4, "async send reqid = %d\n", reqid);
 
 	/* FIXME: netsnmp doesn't know how to handle reciving multiple
 	 * responses from a single packet.
@@ -302,10 +358,14 @@ SANE_Status sane_get_devices(const SANE_Device ***dev_list,
 			     SANE_Bool local_only)
 {
 	free_device_list();
+	DBG_INIT();
 
-
+	errno = 0;
 	bro2_snmp_probe_all();
 	*dev_list = (const SANE_Device **)device_list;
+
+	if (errno == ENOMEM)
+		return SANE_STATUS_NO_MEM;
 	return SANE_STATUS_GOOD;
 }
 
@@ -316,7 +376,7 @@ static int bro2_connect(struct bro2_device *dev)
 						AF_UNSPEC, SOCK_STREAM);
 
 	if (!res) {
-		fprintf(stderr, "failed to resolve %s\n",
+		DBG(1, "failed to resolve %s\n",
 				dev->addr);
 		return -1;
 	}
@@ -392,7 +452,7 @@ static int bro2_read_status(struct bro2_device *dev)
 	if (!strncmp("-NG ", buf, 4)) {
 		not_good = true;
 	} else if (strncmp("+OK ", buf, 4)) {
-		DBG(1, "Status string not \"+OK\" or \"+NG\" => \"%.*s\"\n", (int)r, buf - 2);
+		DBG(1, "Status string not \"+OK\" or \"+NG\" => \"%.*s\"\n", (int)(r - 2), buf);
 		return -1;
 	}
 

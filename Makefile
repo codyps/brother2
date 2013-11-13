@@ -5,7 +5,8 @@ LIB_CFLAGS := $(shell net-snmp-config --cflags)
 
 ALL_CFLAGS += -I. -Iccan
 
-ifdef SANE_DLL
+SANE_DLL ?= 1
+ifneq (SANE_DLL,0)
 ALL_CFLAGS += -DSANE_DLL=SANE_DLL
 endif
 
