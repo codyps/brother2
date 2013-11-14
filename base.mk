@@ -1,4 +1,4 @@
-## base.mk: fc56a98, see https://github.com/jmesmon/trifles.git
+## base.mk: fc56a98+, see https://github.com/jmesmon/trifles.git
 # Usage:
 #
 # == Targets ==
@@ -80,6 +80,7 @@
 # - per-target CFLAGS (didn't I hack this in already?)
 # - will TARGETS always be outputs from Linking?
 # - continous build mechanism ('watch' is broken)
+# - handle the mess that is linking for C++ vs C vs ld -r
 
 # Delete the default suffixes
 .SUFFIXES:
