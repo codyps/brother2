@@ -4,6 +4,7 @@ compiler:
         - gcc
 env:
         - NO_LTO=1
+        - CCAN_LD=ld.gold
         -
 script: make
 install: ./travis-install.sh
