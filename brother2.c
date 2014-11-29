@@ -453,9 +453,9 @@ static int bro2_read_status(struct bro2_device *dev)
 	}
 
 	bool not_good = false;
-	if (memeqstr(buf, r, "-NG ")) {
+	if (memstarts_str(buf, r, "-NG ")) {
 		not_good = true;
-	} else if (!memeqstr(buf, r, "+OK ")) {
+	} else if (!memstarts_str(buf, r, "+OK ")) {
 		DBG(1, "Status string not \"+OK\" or \"+NG\" => \"%.*s\"\n", (int)(r - 2), buf);
 		return -1;
 	}
